@@ -14,9 +14,9 @@
 |---|---|---|---|---|
 | 1 | V1 | App shell + read-only Xcode inventory (installed apps, versions, paths, active selection) | Multi-Xcode fixture test passes; UI lists all detected installs | Immediate visibility into what Xcodes are installed and active |
 | 2 | V1 | Storage scanner for major categories (Xcode apps, DerivedData, Archives, DeviceSupport, Simulator data) | Size totals verified against fixture filesystem; scan completes within perf budget on sample machine | Users see where space is going and largest offenders |
-| 3 | V1 | Ownership attribution and temporary/non-temporary classification UI | Classification rule tests pass; unknown items are explicitly labeled | Users can distinguish safe cleanup vs risky cleanup |
-| 4 | V1 | Dry-run planner with exact path preview and reclaim estimate | Dry-run output deterministic in tests; preview matches selected items | Users can plan cleanup confidently before taking action |
-| 5 | V1 | Safe execution engine (move-to-Trash first, guarded delete fallback) + action log | Integration tests validate reclaimed bytes, partial-failure handling, and logs | Users reclaim disk safely with traceability |
+| 3 | V1 | Ownership attribution, temporary/non-temporary classification UI, itemized simulator inventory (per-device and per-runtime), and runtime telemetry (Xcode + simulator instance counts) | Classification tests pass; simulator device/runtime fixtures are listed with per-item sizes and metadata; Xcode/simulator running-instance telemetry is exposed in GUI and CLI | Users can identify exactly which simulator devices/runtimes are consuming space and what is currently running |
+| 4 | V1 | Dry-run planner with exact path preview and reclaim estimate, including selective simulator-device plans | Dry-run output deterministic in tests; selecting one or more simulator devices produces exact file plan | Users can safely stage targeted simulator cleanup before executing |
+| 5 | V1 | Safe execution engine (move-to-Trash first, guarded delete fallback) + selective simulator-device deletion + action log | Integration tests validate multi-device deletion, reclaimed bytes, blocked booted-device guardrails, instance-count-based guardrails, and logs | Users reclaim disk safely with precise control over simulator cleanup |
 | 6 | V1 | Modification tools: switch active Xcode and manage stale runtimes/device support | `xcode-select` switch validated in integration tests; runtime guardrails enforced | Users can actively tune local Xcode environment, not just clean files |
 | 7 | V1 | Automation policies (age/size/category) with "only when Xcode/simulator closed" checks | Scheduled/manual runs validated; guard conditions tested | Ongoing disk hygiene without manual effort |
 | 8 | V1 GA | History/trends, JSON+CSV report export, signed/notarized release package | Release smoke suite passes; notarized artifact installs cleanly on fresh Mac | Shippable V1 with clear user value and low install friction |
@@ -44,4 +44,4 @@ Each sprint must leave users with at least one new outcome they can realize imme
 - Better predictability.
 
 ## Immediate Next Action
-Start Sprint 1 by implementing a read-only scanner and fixture-based test harness; this de-risks the rest of the roadmap and provides first business value quickly.
+Sprint 1 and Sprint 2 are complete; start Sprint 3 by implementing ownership attribution plus itemized simulator device/runtime inventory in shared core models with GUI/CLI parity.

@@ -17,21 +17,36 @@ public protocol CommandRunning {
     func run(launchPath: String, arguments: [String]) throws -> String
 }
 
+public protocol PathSizing {
+    func fileExists(at url: URL) -> Bool
+    func allocatedSize(at url: URL) -> Int64
+}
+
+public protocol HomeDirectoryProviding {
+    func homeDirectoryURL() -> URL
+}
+
 public struct XcodeInventoryScanner {
     private let applicationDiscoverer: XcodeApplicationDiscovering
     private let activeDeveloperDirectoryProvider: ActiveDeveloperDirectoryProviding
     private let infoPlistReader: InfoPlistReading
+    private let pathSizer: PathSizing
+    private let homeDirectoryProvider: HomeDirectoryProviding
     private let now: () -> Date
 
     public init(
         applicationDiscoverer: XcodeApplicationDiscovering = SystemXcodeApplicationDiscoverer(),
         activeDeveloperDirectoryProvider: ActiveDeveloperDirectoryProviding = XcodeSelectActiveDeveloperDirectoryProvider(),
         infoPlistReader: InfoPlistReading = InfoPlistFileReader(),
+        pathSizer: PathSizing = FileSystemPathSizer(),
+        homeDirectoryProvider: HomeDirectoryProviding = CurrentUserHomeDirectoryProvider(),
         now: @escaping () -> Date = Date.init
     ) {
         self.applicationDiscoverer = applicationDiscoverer
         self.activeDeveloperDirectoryProvider = activeDeveloperDirectoryProvider
         self.infoPlistReader = infoPlistReader
+        self.pathSizer = pathSizer
+        self.homeDirectoryProvider = homeDirectoryProvider
         self.now = now
     }
 
@@ -64,7 +79,8 @@ public struct XcodeInventoryScanner {
                     isActive: matchesActiveDeveloperDirectory(
                         activeDeveloperDirectoryPath: activeDeveloperDirectoryPath,
                         installDeveloperDirectoryPath: developerDirectoryPath
-                    )
+                    ),
+                    sizeInBytes: pathSizer.allocatedSize(at: appURL)
                 )
             }
             .sorted { lhs, rhs in
@@ -77,11 +93,83 @@ public struct XcodeInventoryScanner {
                 return lhs.path.localizedCaseInsensitiveCompare(rhs.path) == .orderedAscending
             }
 
+        let storage = buildStorageUsage(installs: installs)
+
         return XcodeInventorySnapshot(
             scannedAt: now(),
             activeDeveloperDirectoryPath: activeDeveloperDirectoryPath,
-            installs: installs
+            installs: installs,
+            storage: storage
         )
+    }
+
+    private func buildStorageUsage(installs: [XcodeInstall]) -> XcodeStorageUsage {
+        let homeDirectoryURL = homeDirectoryProvider.homeDirectoryURL()
+        let simulatorPaths = [
+            homeDirectoryURL.appendingPathComponent("Library/Developer/CoreSimulator/Devices", isDirectory: true),
+            homeDirectoryURL.appendingPathComponent("Library/Developer/CoreSimulator/Caches", isDirectory: true),
+            URL(filePath: "/Library/Developer/CoreSimulator/Profiles/Runtimes", directoryHint: .isDirectory),
+        ]
+
+        let categories = [
+            makeCategory(
+                kind: .xcodeApplications,
+                title: "Xcode Applications",
+                paths: installs.map { URL(filePath: $0.path, directoryHint: .isDirectory) }
+            ),
+            makeCategory(
+                kind: .derivedData,
+                title: "Derived Data",
+                paths: [homeDirectoryURL.appendingPathComponent("Library/Developer/Xcode/DerivedData", isDirectory: true)]
+            ),
+            makeCategory(
+                kind: .archives,
+                title: "Archives",
+                paths: [homeDirectoryURL.appendingPathComponent("Library/Developer/Xcode/Archives", isDirectory: true)]
+            ),
+            makeCategory(
+                kind: .deviceSupport,
+                title: "Device Support",
+                paths: [homeDirectoryURL.appendingPathComponent("Library/Developer/Xcode/iOS DeviceSupport", isDirectory: true)]
+            ),
+            makeCategory(
+                kind: .simulatorData,
+                title: "Simulator Data",
+                paths: simulatorPaths
+            ),
+        ]
+            .sorted { lhs, rhs in
+                if lhs.bytes != rhs.bytes {
+                    return lhs.bytes > rhs.bytes
+                }
+                return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+            }
+
+        let totalBytes = categories.reduce(Int64(0)) { partialResult, category in
+            partialResult + category.bytes
+        }
+
+        return XcodeStorageUsage(categories: categories, totalBytes: totalBytes)
+    }
+
+    private func makeCategory(kind: StorageCategoryKind, title: String, paths: [URL]) -> StorageCategoryUsage {
+        var seen = Set<String>()
+        var existingPaths: [String] = []
+        var bytes = Int64(0)
+
+        for pathURL in paths {
+            let normalized = normalizedPath(for: pathURL) ?? pathURL.path
+            guard seen.insert(normalized).inserted else {
+                continue
+            }
+            guard pathSizer.fileExists(at: pathURL) else {
+                continue
+            }
+            existingPaths.append(normalized)
+            bytes += pathSizer.allocatedSize(at: pathURL)
+        }
+
+        return StorageCategoryUsage(kind: kind, title: title, bytes: bytes, paths: existingPaths)
     }
 
     private func deduplicatedApplicationURLs(from applicationURLs: [URL]) -> [URL] {
@@ -193,6 +281,109 @@ public struct InfoPlistFileReader: InfoPlistReading {
             return [:]
         }
         return dictionary
+    }
+}
+
+public struct FileSystemPathSizer: PathSizing {
+    private let fileManager: FileManager
+
+    public init(fileManager: FileManager = .default) {
+        self.fileManager = fileManager
+    }
+
+    public func fileExists(at url: URL) -> Bool {
+        fileManager.fileExists(atPath: url.path)
+    }
+
+    public func allocatedSize(at url: URL) -> Int64 {
+        var isDirectory = ObjCBool(false)
+        guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
+            return 0
+        }
+
+        if !isDirectory.boolValue {
+            return fileSize(for: url)
+        }
+        return directorySize(for: url)
+    }
+
+    private func fileSize(for fileURL: URL) -> Int64 {
+        if let resourceValues = try? fileURL.resourceValues(forKeys: [
+            .totalFileAllocatedSizeKey,
+            .fileAllocatedSizeKey,
+            .totalFileSizeKey,
+            .fileSizeKey,
+        ]) {
+            if let value = resourceValues.totalFileAllocatedSize {
+                return Int64(value)
+            }
+            if let value = resourceValues.fileAllocatedSize {
+                return Int64(value)
+            }
+            if let value = resourceValues.totalFileSize {
+                return Int64(value)
+            }
+            if let value = resourceValues.fileSize {
+                return Int64(value)
+            }
+        }
+
+        if let attributes = try? fileManager.attributesOfItem(atPath: fileURL.path),
+           let number = attributes[.size] as? NSNumber {
+            return number.int64Value
+        }
+
+        return 0
+    }
+
+    private func directorySize(for directoryURL: URL) -> Int64 {
+        guard let enumerator = fileManager.enumerator(
+            at: directoryURL,
+            includingPropertiesForKeys: [
+                .isRegularFileKey,
+                .totalFileAllocatedSizeKey,
+                .fileAllocatedSizeKey,
+                .totalFileSizeKey,
+                .fileSizeKey,
+            ],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return 0
+        }
+
+        var total = Int64(0)
+        for case let fileURL as URL in enumerator {
+            guard let values = try? fileURL.resourceValues(forKeys: [
+                .isRegularFileKey,
+                .totalFileAllocatedSizeKey,
+                .fileAllocatedSizeKey,
+                .totalFileSizeKey,
+                .fileSizeKey,
+            ]) else {
+                continue
+            }
+            guard values.isRegularFile == true else {
+                continue
+            }
+            if let size = values.totalFileAllocatedSize {
+                total += Int64(size)
+            } else if let size = values.fileAllocatedSize {
+                total += Int64(size)
+            } else if let size = values.totalFileSize {
+                total += Int64(size)
+            } else if let size = values.fileSize {
+                total += Int64(size)
+            }
+        }
+        return total
+    }
+}
+
+public struct CurrentUserHomeDirectoryProvider: HomeDirectoryProviding {
+    public init() {}
+
+    public func homeDirectoryURL() -> URL {
+        FileManager.default.homeDirectoryForCurrentUser
     }
 }
 

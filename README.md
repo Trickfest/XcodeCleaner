@@ -2,14 +2,20 @@
 
 Native macOS tooling (Swift + SwiftUI) to inventory, understand, and clean Xcode-related disk usage.
 
-## Sprint 1 Status
+## Sprint Status
 
-Sprint 1 deliverables implemented:
+Implemented through Sprint 2:
 - Read-only Xcode installation inventory scanner.
 - Active developer directory detection (`xcode-select -p`).
-- SwiftUI app shell to view discovered installs.
-- CLI output for quick verification and automation.
-- Unit tests for multi-Xcode discovery and metadata behavior.
+- Read-only storage accounting for:
+- Xcode application bundles.
+- DerivedData.
+- Archives.
+- iOS DeviceSupport.
+- Simulator data (devices, caches, runtimes path).
+- SwiftUI app shell showing inventory and storage totals.
+- CLI JSON output with inventory and storage models.
+- Unit tests for multi-Xcode discovery and storage categorization.
 
 ## Quick Start
 

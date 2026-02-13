@@ -19,6 +19,7 @@ Ship a native macOS app (Swift + SwiftUI) that helps users understand and contro
 - Discover all installed Xcode app bundles (stable/beta/renamed installs).
 - Show version, build number, path, size, install date, and active status.
 - Detect active developer directory and selected Command Line Tools.
+- Show per-install runtime status: whether each Xcode install is currently running and its instance count.
 
 ### 3.2 Complete Storage Accounting
 - Scan and report all major Xcode-related storage classes:
@@ -31,6 +32,8 @@ Ship a native macOS app (Swift + SwiftUI) that helps users understand and contro
 - CoreSimulator caches.
 - Additional Xcode caches/logs discovered from known paths.
 - Show per-category totals and grand total.
+- For Simulator data, provide detailed itemized inventory (per runtime and per device) with size and identifying metadata.
+- For each simulator device, show runtime/booted state and running instance count.
 
 ### 3.3 Ownership Mapping
 - Attribute files/folders to:
@@ -53,6 +56,7 @@ Ship a native macOS app (Swift + SwiftUI) that helps users understand and contro
 - Direct delete only when trash is not feasible or user opts in.
 - Switch active Xcode (developer directory) from the UI.
 - Optional uninstall flow for selected Xcode bundle(s) with guardrails.
+- Support selective deletion of one or more simulator devices in a single operation.
 
 ### 3.6 Automation
 - Rule-based cleanup policies (age-based, size-based, category-based).
@@ -79,6 +83,8 @@ Ship a native macOS app (Swift + SwiftUI) that helps users understand and contro
 ## 5) Guardrails
 - Block cleanup when Xcode process is active, unless action is explicitly safe while running.
 - Block risky simulator/runtime changes while simulator is running.
+- Block deletion of booted simulator devices and clearly identify why action is blocked.
+- Use live Xcode and simulator instance counts when evaluating destructive-action eligibility.
 - Never touch paths outside explicit allowlisted roots.
 - No silent destructive actions.
 
@@ -96,7 +102,11 @@ Ship a native macOS app (Swift + SwiftUI) that helps users understand and contro
 
 ## 7) Acceptance Criteria (Release Gate)
 - User with multiple Xcodes can see all installs, versions, paths, and sizes.
+- User can see per-install Xcode running status and instance count.
 - User can identify temporary vs non-temporary storage with clear rationale.
+- User can see simulator devices individually (not only aggregate simulator totals).
+- User can see per-device simulator running/booted status and instance count.
+- User can select and delete one or more simulator devices with accurate reclaim reporting.
 - User can run dry-run preview and verify exact paths before cleanup.
 - User can safely execute cleanup and see accurate reclaimed space.
 - User can switch active Xcode from app and verify with `xcode-select -p`.
@@ -113,6 +123,8 @@ Ship a native macOS app (Swift + SwiftUI) that helps users understand and contro
 - Integration tests:
 - Scan on fixture trees representing single and multi-Xcode setups.
 - Cleanup dry-run and execute workflows.
+- Selective simulator-device deletion workflows, including blocked booted-device cases.
+- Runtime telemetry tests covering Xcode instance counts and simulator state/count signals.
 - Guardrail behavior with mocked running processes.
 - End-to-end smoke tests:
 - Fresh install, scan, cleanup, export report.

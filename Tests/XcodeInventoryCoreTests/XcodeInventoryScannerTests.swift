@@ -26,10 +26,39 @@ struct XcodeInventoryScannerTests {
         )
 
         let activeDeveloperDirectory = xcodeBeta.appendingPathComponent("Contents/Developer", isDirectory: true)
+        let fakeHome = sandbox.url.appendingPathComponent("fake-home", isDirectory: true)
+
+        let derivedDataPath = fakeHome
+            .appendingPathComponent("Library/Developer/Xcode/DerivedData", isDirectory: true)
+            .path
+        let archivesPath = fakeHome
+            .appendingPathComponent("Library/Developer/Xcode/Archives", isDirectory: true)
+            .path
+        let deviceSupportPath = fakeHome
+            .appendingPathComponent("Library/Developer/Xcode/iOS DeviceSupport", isDirectory: true)
+            .path
+        let simulatorDevicesPath = fakeHome
+            .appendingPathComponent("Library/Developer/CoreSimulator/Devices", isDirectory: true)
+            .path
+        let simulatorCachesPath = fakeHome
+            .appendingPathComponent("Library/Developer/CoreSimulator/Caches", isDirectory: true)
+            .path
+        let simulatorRuntimesPath = "/Library/Developer/CoreSimulator/Profiles/Runtimes"
 
         let scanner = XcodeInventoryScanner(
             applicationDiscoverer: StubDiscoverer(urls: [xcode16, xcode16, xcodeBeta]),
             activeDeveloperDirectoryProvider: StubActiveDeveloperProvider(url: activeDeveloperDirectory),
+            pathSizer: StubPathSizer(sizeByPath: [
+                xcode16.path: 1_000,
+                xcodeBeta.path: 2_000,
+                derivedDataPath: 300,
+                archivesPath: 400,
+                deviceSupportPath: 500,
+                simulatorDevicesPath: 600,
+                simulatorCachesPath: 700,
+                simulatorRuntimesPath: 800,
+            ]),
+            homeDirectoryProvider: StubHomeDirectoryProvider(url: fakeHome),
             now: { Date(timeIntervalSince1970: 42) }
         )
 
@@ -41,6 +70,16 @@ struct XcodeInventoryScannerTests {
         #expect(snapshot.installs.first?.displayName == "Xcode-16.1-beta")
         #expect(snapshot.installs.first?.version == "16.1")
         #expect(snapshot.installs.first?.build == "16B500")
+        #expect(snapshot.installs.first?.sizeInBytes == 2_000)
+        #expect(snapshot.storage.totalBytes == 6_300)
+        #expect(snapshot.storage.categories.count == 5)
+        #expect(snapshot.storage.categories[0].kind == .xcodeApplications)
+        #expect(snapshot.storage.categories[0].bytes == 3_000)
+        #expect(snapshot.storage.categories[1].kind == .simulatorData)
+        #expect(snapshot.storage.categories[1].bytes == 2_100)
+        #expect(bytes(for: .deviceSupport, in: snapshot) == 500)
+        #expect(bytes(for: .archives, in: snapshot) == 400)
+        #expect(bytes(for: .derivedData, in: snapshot) == 300)
     }
 
     @Test("Scanner falls back to CFBundleVersion when DTXcodeBuild is missing")
@@ -60,6 +99,8 @@ struct XcodeInventoryScannerTests {
         let scanner = XcodeInventoryScanner(
             applicationDiscoverer: StubDiscoverer(urls: [xcode]),
             activeDeveloperDirectoryProvider: StubActiveDeveloperProvider(url: nil),
+            pathSizer: StubPathSizer(sizeByPath: [xcode.path: 512]),
+            homeDirectoryProvider: StubHomeDirectoryProvider(url: sandbox.url),
             now: { Date(timeIntervalSince1970: 99) }
         )
 
@@ -68,6 +109,8 @@ struct XcodeInventoryScannerTests {
         #expect(snapshot.installs.count == 1)
         #expect(snapshot.installs[0].build == "15F31d")
         #expect(snapshot.installs[0].version == "15.4")
+        #expect(snapshot.installs[0].sizeInBytes == 512)
+        #expect(bytes(for: .xcodeApplications, in: snapshot) == 512)
     }
 }
 
@@ -83,6 +126,30 @@ private struct StubActiveDeveloperProvider: ActiveDeveloperDirectoryProviding {
     let url: URL?
 
     func activeDeveloperDirectoryURL() -> URL? {
+        url
+    }
+}
+
+private struct StubPathSizer: PathSizing {
+    let sizeByPath: [String: Int64]
+
+    func fileExists(at url: URL) -> Bool {
+        sizeByPath[normalize(url: url)] != nil
+    }
+
+    func allocatedSize(at url: URL) -> Int64 {
+        sizeByPath[normalize(url: url)] ?? 0
+    }
+
+    private func normalize(url: URL) -> String {
+        url.standardizedFileURL.resolvingSymlinksInPath().path
+    }
+}
+
+private struct StubHomeDirectoryProvider: HomeDirectoryProviding {
+    let url: URL
+
+    func homeDirectoryURL() -> URL {
         url
     }
 }
@@ -136,4 +203,8 @@ private func makeFakeXcodeApp(
     try plistData.write(to: contentsURL.appendingPathComponent("Info.plist"))
 
     return appURL
+}
+
+private func bytes(for kind: StorageCategoryKind, in snapshot: XcodeInventorySnapshot) -> Int64 {
+    snapshot.storage.categories.first(where: { $0.kind == kind })?.bytes ?? -1
 }

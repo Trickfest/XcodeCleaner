@@ -56,7 +56,6 @@ struct ContentView: View {
                 Text("No scan data yet.")
                     .foregroundStyle(.secondary)
             }
-            Spacer(minLength: 0)
         }
         .padding(20)
     }
@@ -66,7 +65,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("XcodeCleaner")
                     .font(.largeTitle.bold())
-                Text("Sprint 1: Read-only inventory")
+                Text("Sprint 2: Read-only inventory + storage accounting")
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -79,47 +78,98 @@ struct ContentView: View {
 
     @ViewBuilder
     private func inventoryView(snapshot: XcodeInventorySnapshot) -> some View {
-        Text("Detected Xcode installs: \(snapshot.installs.count)")
-            .font(.headline)
-
-        if let activePath = snapshot.activeDeveloperDirectoryPath {
-            Text("Active Developer Directory: \(activePath)")
-                .font(.callout.monospaced())
-                .foregroundStyle(.secondary)
-        } else {
-            Text("Active Developer Directory: Unknown")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                storageOverviewView(snapshot: snapshot)
+                installInventoryView(snapshot: snapshot)
+            }
         }
+    }
 
-        List(snapshot.installs) { install in
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
-                    Text(install.displayName)
-                        .font(.title3.weight(.semibold))
-                    if install.isActive {
-                        Text("ACTIVE")
-                            .font(.caption2.weight(.bold))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background(Color.green.opacity(0.2))
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
+    private func storageOverviewView(snapshot: XcodeInventorySnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Storage Overview")
+                .font(.headline)
+            Text("Total Xcode Footprint: \(formatBytes(snapshot.storage.totalBytes))")
+                .font(.title3.weight(.semibold))
+
+            ForEach(snapshot.storage.categories) { category in
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(category.title)
+                        Spacer()
+                        Text(formatBytes(category.bytes))
+                            .font(.callout.monospacedDigit())
+                    }
+                    .font(.callout.weight(.medium))
+
+                    if !category.paths.isEmpty {
+                        Text(category.paths.joined(separator: "\n"))
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
                     }
                 }
+                .padding(10)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+            }
+        }
+    }
 
-                HStack(spacing: 10) {
-                    Text("Version: \(install.version ?? "Unknown")")
-                    Text("Build: \(install.build ?? "Unknown")")
-                }
-                .font(.callout)
-                .foregroundStyle(.secondary)
+    private func installInventoryView(snapshot: XcodeInventorySnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Detected Xcode installs: \(snapshot.installs.count)")
+                .font(.headline)
 
-                Text(install.path)
-                    .font(.footnote.monospaced())
+            if let activePath = snapshot.activeDeveloperDirectoryPath {
+                Text("Active Developer Directory: \(activePath)")
+                    .font(.callout.monospaced())
+                    .foregroundStyle(.secondary)
                     .textSelection(.enabled)
+            } else {
+                Text("Active Developer Directory: Unknown")
+                    .font(.callout)
                     .foregroundStyle(.secondary)
             }
-            .padding(.vertical, 4)
+
+            ForEach(snapshot.installs) { install in
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        Text(install.displayName)
+                            .font(.title3.weight(.semibold))
+                        if install.isActive {
+                            Text("ACTIVE")
+                                .font(.caption2.weight(.bold))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 3)
+                                .background(Color.green.opacity(0.2))
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                        }
+                        Spacer()
+                        Text(formatBytes(install.sizeInBytes))
+                            .font(.callout.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+
+                    HStack(spacing: 10) {
+                        Text("Version: \(install.version ?? "Unknown")")
+                        Text("Build: \(install.build ?? "Unknown")")
+                    }
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+
+                    Text(install.path)
+                        .font(.footnote.monospaced())
+                        .textSelection(.enabled)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(10)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+            }
         }
+    }
+
+    private func formatBytes(_ bytes: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
 }
