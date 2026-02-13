@@ -14,12 +14,14 @@ Make long scans transparent by showing progress and active scan phase in both GU
 - CLI progress experience:
 - Human-readable progress/status updates while scanning.
 - Preserve final JSON output compatibility.
+- Add CLI switch to suppress progress output for automation use cases.
 - Parity checks to ensure GUI and CLI report the same phase model.
 
 ## Deliverables
 - Shared progress model in core scanner.
 - `XcodeCleanerApp` progress bar and current-phase UI.
 - `xcodecleaner-cli` progress/status output during scan.
+- `xcodecleaner-cli --no-progress` mode with progress suppressed.
 - Tests for phase ordering, monotonic progress movement, and parity between outputs.
 
 ## Exit Criteria

@@ -4,7 +4,7 @@ Native macOS tooling (Swift + SwiftUI) to inventory, understand, and clean Xcode
 
 ## Sprint Status
 
-Implemented through Sprint 3:
+Implemented through Sprint 4:
 - Read-only Xcode installation inventory scanner.
 - Active developer directory detection (`xcode-select -p`).
 - Read-only storage accounting for:
@@ -20,9 +20,14 @@ Implemented through Sprint 3:
 - Itemized simulator inventory:
 - Per runtime metadata and size.
 - Per device metadata and size.
+- Scan progress instrumentation:
+- Shared scan phases and monotonic progress events from core scanner.
+- GUI progress bar with percentage and current phase/status message.
+- CLI progress/status output on stderr while keeping final JSON on stdout.
+- CLI `--no-progress` switch to suppress progress output when desired.
 - SwiftUI app shell showing inventory and storage totals.
 - CLI JSON output with inventory and storage models.
-- Unit tests for multi-Xcode discovery, storage categorization, telemetry, and simulator itemization.
+- Unit tests for multi-Xcode discovery, storage categorization, telemetry, simulator itemization, and progress phase ordering.
 
 ## Quick Start
 

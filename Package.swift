@@ -37,5 +37,9 @@ let package = Package(
             name: "XcodeInventoryCoreTests",
             dependencies: ["XcodeInventoryCore"]
         ),
+        .testTarget(
+            name: "XcodeCleanerCLITests",
+            dependencies: ["XcodeCleanerCLI", "XcodeInventoryCore"]
+        ),
     ],
 )

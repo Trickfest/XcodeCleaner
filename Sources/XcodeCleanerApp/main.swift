@@ -20,8 +20,12 @@ struct XcodeCleanerApp: App {
 final class InventoryViewModel: ObservableObject {
     @Published private(set) var isLoading = false
     @Published private(set) var snapshot: XcodeInventorySnapshot?
+    @Published private(set) var scanProgressFraction: Double = 0
+    @Published private(set) var scanPhaseTitle = "Idle"
+    @Published private(set) var scanMessage = "Ready"
 
     private let scanner: XcodeInventoryScanner
+    private var activeScanID = UUID()
 
     init(scanner: XcodeInventoryScanner = XcodeInventoryScanner()) {
         self.scanner = scanner
@@ -36,8 +40,36 @@ final class InventoryViewModel: ObservableObject {
 
     func reload() {
         isLoading = true
-        snapshot = scanner.scan()
-        isLoading = false
+        scanProgressFraction = 0
+        scanPhaseTitle = ScanPhase.discoveringXcodeInstalls.title
+        scanMessage = "Starting scan..."
+        let scanID = UUID()
+        activeScanID = scanID
+        let scanner = self.scanner
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let snapshot = scanner.scan { progress in
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, self.activeScanID == scanID else {
+                        return
+                    }
+                    self.scanProgressFraction = progress.fractionCompleted
+                    self.scanPhaseTitle = progress.phase.title
+                    self.scanMessage = progress.message
+                }
+            }
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.activeScanID == scanID else {
+                    return
+                }
+                self.snapshot = snapshot
+                self.scanProgressFraction = 1
+                self.scanPhaseTitle = ScanPhase.finalizingSnapshot.title
+                self.scanMessage = "Scan complete"
+                self.isLoading = false
+            }
+        }
     }
 }
 
@@ -49,7 +81,11 @@ struct ContentView: View {
             header
             Divider()
             if viewModel.isLoading {
-                ProgressView("Scanning for Xcode installations...")
+                scanProgressView
+                if let snapshot = viewModel.snapshot {
+                    Divider()
+                    inventoryView(snapshot: snapshot)
+                }
             } else if let snapshot = viewModel.snapshot {
                 inventoryView(snapshot: snapshot)
             } else {
@@ -73,6 +109,25 @@ struct ContentView: View {
                 viewModel.reload()
             }
             .keyboardShortcut("r", modifiers: [.command])
+        }
+    }
+
+    private var scanProgressView: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Scanning")
+                    .font(.headline)
+                Spacer()
+                Text("\(Int((viewModel.scanProgressFraction * 100).rounded()))%")
+                    .font(.callout.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            ProgressView(value: viewModel.scanProgressFraction)
+            Text(viewModel.scanPhaseTitle)
+                .font(.callout.weight(.medium))
+            Text(viewModel.scanMessage)
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 

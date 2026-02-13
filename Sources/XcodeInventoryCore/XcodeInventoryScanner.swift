@@ -90,7 +90,7 @@ public protocol SimulatorListingProviding {
     func simulatorListing() -> SimulatorListing
 }
 
-public struct XcodeInventoryScanner {
+public struct XcodeInventoryScanner: @unchecked Sendable {
     private let applicationDiscoverer: XcodeApplicationDiscovering
     private let activeDeveloperDirectoryProvider: ActiveDeveloperDirectoryProviding
     private let infoPlistReader: InfoPlistReading
@@ -120,15 +120,29 @@ public struct XcodeInventoryScanner {
         self.now = now
     }
 
-    public func scan() -> XcodeInventorySnapshot {
+    public func scan(progressHandler: ((ScanProgress) -> Void)? = nil) -> XcodeInventorySnapshot {
+        func emitProgress(_ phase: ScanPhase, _ fraction: Double, _ message: String) {
+            progressHandler?(ScanProgress(phase: phase, fractionCompleted: fraction, message: message))
+        }
+
+        emitProgress(.discoveringXcodeInstalls, 0.01, "Locating Xcode application bundles")
         let activeDeveloperDirectoryURL = activeDeveloperDirectoryProvider.activeDeveloperDirectoryURL()
         let activeDeveloperDirectoryPath = normalizedPath(for: activeDeveloperDirectoryURL)
 
         let runningApplications = runningApplicationsProvider.runningApplications()
         let xcodeRunningCountsByPath = runningXcodeInstanceCountByInstallPath(from: runningApplications)
 
-        let installs = deduplicatedApplicationURLs(from: applicationDiscoverer.discoverXcodeApplicationURLs())
-            .map { appURL -> XcodeInstall in
+        let discoveredApplications = deduplicatedApplicationURLs(from: applicationDiscoverer.discoverXcodeApplicationURLs())
+        emitProgress(
+            .discoveringXcodeInstalls,
+            0.10,
+            "Discovered \(discoveredApplications.count) Xcode install(s)"
+        )
+
+        let sizingInstallFractionStart = 0.10
+        let sizingInstallFractionEnd = 0.35
+        var installs = discoveredApplications.enumerated()
+            .map { index, appURL -> XcodeInstall in
                 let info = infoPlistReader.readInfoPlist(at: appURL)
                 let displayName = (info[InfoPlistKeys.bundleDisplayName] as? String)
                     ?? (info[InfoPlistKeys.bundleName] as? String)
@@ -160,7 +174,21 @@ public struct XcodeInventoryScanner {
                     safetyClassification: .destructive
                 )
             }
-            .sorted { lhs, rhs in
+        if discoveredApplications.isEmpty {
+            emitProgress(.sizingXcodeInstalls, sizingInstallFractionEnd, "No Xcode installs found")
+        } else {
+            for index in discoveredApplications.indices {
+                let progress = sizingInstallFractionStart
+                    + (Double(index + 1) / Double(discoveredApplications.count))
+                    * (sizingInstallFractionEnd - sizingInstallFractionStart)
+                emitProgress(
+                    .sizingXcodeInstalls,
+                    progress,
+                    "Processed Xcode install \(index + 1) of \(discoveredApplications.count)"
+                )
+            }
+        }
+        installs = installs.sorted { lhs, rhs in
                 if lhs.isActive != rhs.isActive {
                     return lhs.isActive
                 }
@@ -173,16 +201,35 @@ public struct XcodeInventoryScanner {
                 return lhs.path.localizedCaseInsensitiveCompare(rhs.path) == .orderedAscending
             }
 
-        let simulatorListing = simulatorListingProvider.simulatorListing()
-        let simulatorInventory = buildSimulatorInventory(from: simulatorListing)
+        emitProgress(.sizingStorageCategories, 0.40, "Sizing storage categories")
         let storage = buildStorageUsage(installs: installs)
+        emitProgress(.sizingStorageCategories, 0.58, "Storage category sizing complete")
 
+        emitProgress(.loadingSimulatorListing, 0.62, "Loading simulator device/runtime listing")
+        let simulatorListing = simulatorListingProvider.simulatorListing()
+        emitProgress(.loadingSimulatorListing, 0.68, "Loaded simulator device/runtime listing")
+
+        emitProgress(.buildingSimulatorInventory, 0.74, "Building simulator inventory records")
+        let simulatorInventory = buildSimulatorInventory(from: simulatorListing)
+        emitProgress(
+            .buildingSimulatorInventory,
+            0.86,
+            "Built \(simulatorInventory.devices.count) device and \(simulatorInventory.runtimes.count) runtime records"
+        )
+
+        emitProgress(.computingRuntimeTelemetry, 0.92, "Computing runtime telemetry")
         let runtimeTelemetry = RuntimeTelemetry(
             totalXcodeRunningInstances: installs.reduce(0) { $0 + $1.runningInstanceCount },
             totalSimulatorAppRunningInstances: runningSimulatorAppInstanceCount(from: runningApplications)
         )
+        emitProgress(
+            .computingRuntimeTelemetry,
+            0.97,
+            "Telemetry complete (Xcode: \(runtimeTelemetry.totalXcodeRunningInstances), Simulator app: \(runtimeTelemetry.totalSimulatorAppRunningInstances))"
+        )
 
-        return XcodeInventorySnapshot(
+        emitProgress(.finalizingSnapshot, 0.99, "Finalizing snapshot")
+        let snapshot = XcodeInventorySnapshot(
             scannedAt: now(),
             activeDeveloperDirectoryPath: activeDeveloperDirectoryPath,
             installs: installs,
@@ -190,6 +237,8 @@ public struct XcodeInventoryScanner {
             simulator: simulatorInventory,
             runtimeTelemetry: runtimeTelemetry
         )
+        emitProgress(.finalizingSnapshot, 1.0, "Scan complete")
+        return snapshot
     }
 
     private func buildStorageUsage(installs: [XcodeInstall]) -> XcodeStorageUsage {

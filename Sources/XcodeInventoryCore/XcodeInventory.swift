@@ -1,5 +1,46 @@
 import Foundation
 
+public enum ScanPhase: String, Codable, CaseIterable, Sendable {
+    case discoveringXcodeInstalls
+    case sizingXcodeInstalls
+    case sizingStorageCategories
+    case loadingSimulatorListing
+    case buildingSimulatorInventory
+    case computingRuntimeTelemetry
+    case finalizingSnapshot
+
+    public var title: String {
+        switch self {
+        case .discoveringXcodeInstalls:
+            return "Discovering Xcode Installs"
+        case .sizingXcodeInstalls:
+            return "Sizing Xcode Installs"
+        case .sizingStorageCategories:
+            return "Sizing Storage Categories"
+        case .loadingSimulatorListing:
+            return "Loading Simulator Listing"
+        case .buildingSimulatorInventory:
+            return "Building Simulator Inventory"
+        case .computingRuntimeTelemetry:
+            return "Computing Runtime Telemetry"
+        case .finalizingSnapshot:
+            return "Finalizing Snapshot"
+        }
+    }
+}
+
+public struct ScanProgress: Equatable, Sendable {
+    public let phase: ScanPhase
+    public let fractionCompleted: Double
+    public let message: String
+
+    public init(phase: ScanPhase, fractionCompleted: Double, message: String) {
+        self.phase = phase
+        self.fractionCompleted = min(1, max(0, fractionCompleted))
+        self.message = message
+    }
+}
+
 public enum SafetyClassification: String, Codable, Sendable {
     case regenerable
     case conditionallySafe

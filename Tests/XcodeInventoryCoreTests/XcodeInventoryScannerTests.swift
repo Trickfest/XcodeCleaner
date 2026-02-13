@@ -227,6 +227,58 @@ struct XcodeInventoryScannerTests {
         #expect(snapshot.runtimeTelemetry.totalXcodeRunningInstances == 0)
         #expect(snapshot.simulator.devices.isEmpty)
     }
+
+    @Test("Scanner emits monotonic progress updates with stable phase order")
+    func scannerProgressUpdates() throws {
+        let sandbox = try TemporaryDirectory.make()
+        defer { sandbox.cleanup() }
+
+        let xcode = try makeFakeXcodeApp(
+            in: sandbox.url,
+            name: "Xcode-26.0",
+            bundleIdentifier: "com.apple.dt.Xcode",
+            shortVersion: "26.0",
+            bundleVersion: "17A300",
+            xcodeBuild: "17A300"
+        )
+
+        let scanner = XcodeInventoryScanner(
+            applicationDiscoverer: StubDiscoverer(urls: [xcode]),
+            activeDeveloperDirectoryProvider: StubActiveDeveloperProvider(url: nil),
+            pathSizer: StubPathSizer(sizeByPath: [xcode.path: 100]),
+            homeDirectoryProvider: StubHomeDirectoryProvider(url: sandbox.url),
+            runningApplicationsProvider: StubRunningApplicationsProvider(records: []),
+            simulatorListingProvider: StubSimulatorListingProvider(
+                listing: SimulatorListing(devices: [], runtimes: [])
+            ),
+            now: { Date(timeIntervalSince1970: 200) }
+        )
+
+        var updates: [ScanProgress] = []
+        _ = scanner.scan { progress in
+            updates.append(progress)
+        }
+
+        #expect(!updates.isEmpty)
+        #expect(updates.first?.phase == .discoveringXcodeInstalls)
+        #expect(updates.last?.phase == .finalizingSnapshot)
+        #expect(updates.last?.fractionCompleted == 1)
+
+        for index in 1..<updates.count {
+            #expect(updates[index].fractionCompleted >= updates[index - 1].fractionCompleted)
+        }
+
+        let phaseOrder = deduplicatedPhases(updates.map(\.phase))
+        #expect(phaseOrder == [
+            .discoveringXcodeInstalls,
+            .sizingXcodeInstalls,
+            .sizingStorageCategories,
+            .loadingSimulatorListing,
+            .buildingSimulatorInventory,
+            .computingRuntimeTelemetry,
+            .finalizingSnapshot,
+        ])
+    }
 }
 
 private struct StubDiscoverer: XcodeApplicationDiscovering {
@@ -338,4 +390,12 @@ private func makeFakeXcodeApp(
 
 private func bytes(for kind: StorageCategoryKind, in snapshot: XcodeInventorySnapshot) -> Int64 {
     snapshot.storage.categories.first(where: { $0.kind == kind })?.bytes ?? -1
+}
+
+private func deduplicatedPhases(_ phases: [ScanPhase]) -> [ScanPhase] {
+    var result: [ScanPhase] = []
+    for phase in phases where result.last != phase {
+        result.append(phase)
+    }
+    return result
 }

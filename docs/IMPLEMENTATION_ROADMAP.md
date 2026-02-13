@@ -45,4 +45,4 @@ Each sprint must leave users with at least one new outcome they can realize imme
 - Better predictability.
 
 ## Immediate Next Action
-Sprint 3 implementation is wrapping up; next sprint is Sprint 4 focused on scan-progress instrumentation and progress UX in both GUI and CLI.
+Sprint 4 is complete; next sprint is Sprint 5 for dry-run planning with exact path preview and reclaim estimates, including selective simulator-device plans.
