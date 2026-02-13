@@ -3,6 +3,9 @@
 ## Planning Assumptions
 - Sprint length: 2 weeks.
 - Every sprint must ship an internal release candidate with demoable functionality.
+- Every sprint must ship both artifacts:
+- `XcodeCleanerApp` for interactive workflows.
+- `xcodecleaner-cli` for scriptable workflows.
 - No sprint closes without automated tests for new behavior and a manual smoke test script.
 
 ## Sprint Plan
@@ -27,6 +30,8 @@
 ## Quality Gates (Apply Every Sprint)
 - New code paths require unit tests.
 - User-visible flows require integration coverage.
+- New sprint capabilities must be exposed through both GUI and CLI when technically applicable.
+- GUI and CLI parity tests/fixtures must pass for shared models and computed values.
 - Regression suite must pass before sprint close.
 - Known high-severity defects block sprint acceptance.
 

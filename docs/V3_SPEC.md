@@ -23,6 +23,11 @@ Make XcodeCleaner a full developer workstation optimization platform with predic
 - Recovery assistant for accidental destructive actions.
 - Integrity checks for simulator/runtime consistency after cleanup.
 
+### 2.5 Dual-Artifact Delivery
+- Every V3 feature must ship in both `XcodeCleanerApp` and `xcodecleaner-cli` when technically applicable.
+- Predictive and compliance outputs must be consumable from CLI in machine-readable form.
+- GUI and CLI must stay backed by shared core services and model contracts.
+
 ## 3) UX Requirements
 - Capacity forecast timeline in dashboard.
 - "What changed since last week" report with actionable insights.
@@ -32,6 +37,7 @@ Make XcodeCleaner a full developer workstation optimization platform with predic
 - Forecast accuracy must meet a minimum error target over rolling windows.
 - Adjacent toolchain scans must be clearly separated from core Xcode scans.
 - Enterprise policy signature verification must fail closed.
+- GUI and CLI parity checks pass for all V3 capabilities delivered in scope.
 - V1 and V2 critical flows remain stable under regression suite.
 
 ## 5) Test Strategy

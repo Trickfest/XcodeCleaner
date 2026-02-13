@@ -8,6 +8,10 @@ Ship a native macOS app (Swift + SwiftUI) that helps users understand and contro
 - Runs on macOS (target: macOS 14+ unless changed).
 - Distribution format: signed, notarized drag-and-drop `.app` bundle (zip or dmg container).
 - App must be usable without command-line setup.
+- V1 release must include two supported artifacts from the same codebase:
+- `XcodeCleanerApp` (SwiftUI GUI app).
+- `xcodecleaner-cli` (CLI for scripting/automation with JSON output).
+- Any capability delivered in V1 must be available in both artifacts when technically applicable.
 
 ## 3) Scope: V1 Must Include
 
@@ -97,6 +101,7 @@ Ship a native macOS app (Swift + SwiftUI) that helps users understand and contro
 - User can safely execute cleanup and see accurate reclaimed space.
 - User can switch active Xcode from app and verify with `xcode-select -p`.
 - User can export a full inventory + action report.
+- GUI and CLI both expose the full V1 inventory model and produce consistent values.
 - Critical flows covered by automated tests; no P0/P1 open defects.
 
 ## 8) Test Strategy
@@ -114,5 +119,5 @@ Ship a native macOS app (Swift + SwiftUI) that helps users understand and contro
 
 ## 9) Definition of Done
 - All V1 acceptance criteria pass.
-- Signed + notarized distribution artifact produced.
+- Signed + notarized GUI distribution artifact produced and CLI release binary packaged.
 - Release notes and known limitations documented.

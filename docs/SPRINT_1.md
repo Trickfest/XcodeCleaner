@@ -20,6 +20,7 @@ Deliver a read-only, testable inventory experience that identifies installed Xco
 - Scanner deduplicates installs and reports versions/builds/paths.
 - Active install is correctly marked from `xcode-select -p`.
 - CLI emits valid JSON snapshot.
+- GUI and CLI outputs are consistent for install count, active selection, and metadata values.
 - Tests pass in CI/local with workspace cache overrides.
 
 ## Out of Scope

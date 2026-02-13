@@ -29,6 +29,11 @@ Expand beyond core cleanup into optimization guidance, deeper diagnostics, and t
 - Weekly digest view of growth trends and cleanup impact.
 - Drift alerts when disk usage exceeds user-defined thresholds.
 
+### 2.6 Dual-Artifact Delivery
+- Every V2 feature must ship in both `XcodeCleanerApp` and `xcodecleaner-cli` when technically applicable.
+- CLI output schema must include all V2 data needed for non-interactive workflows.
+- GUI and CLI must share the same core evaluation logic to avoid drift.
+
 ## 3) UX Requirements
 - Recommendation center with one-click drill-down to exact affected paths.
 - Policy editor with simulation mode before save.
@@ -38,6 +43,7 @@ Expand beyond core cleanup into optimization guidance, deeper diagnostics, and t
 - Recommendations must be auditable with exact rule traces.
 - Policy import/export round-trips with no semantic changes.
 - Automation workflows produce deterministic logs and summary outcomes.
+- GUI and CLI return consistent recommendation and policy evaluation results on the same fixture inputs.
 - No regression in V1 scan and cleanup performance/safety gates.
 
 ## 5) Test Strategy
