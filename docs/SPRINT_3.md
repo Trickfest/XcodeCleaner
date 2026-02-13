@@ -38,4 +38,4 @@ Add itemized simulator visibility and ownership/safety context so users can deci
 - Automation and scheduling behavior.
 
 ## Follow-On
-Selective deletion of one or more simulator devices lands in Sprint 5 after dry-run planning support in Sprint 4.
+Progress UX lands in Sprint 4, dry-run planning in Sprint 5, and selective deletion of one or more simulator devices in Sprint 6.

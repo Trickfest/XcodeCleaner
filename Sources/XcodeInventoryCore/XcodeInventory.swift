@@ -1,5 +1,11 @@
 import Foundation
 
+public enum SafetyClassification: String, Codable, Sendable {
+    case regenerable
+    case conditionallySafe
+    case destructive
+}
+
 public struct XcodeInstall: Codable, Equatable, Identifiable, Sendable {
     public var id: String { path }
 
@@ -10,7 +16,10 @@ public struct XcodeInstall: Codable, Equatable, Identifiable, Sendable {
     public let path: String
     public let developerDirectoryPath: String
     public let isActive: Bool
+    public let runningInstanceCount: Int
     public let sizeInBytes: Int64
+    public let ownershipSummary: String
+    public let safetyClassification: SafetyClassification
 
     public init(
         displayName: String,
@@ -20,7 +29,10 @@ public struct XcodeInstall: Codable, Equatable, Identifiable, Sendable {
         path: String,
         developerDirectoryPath: String,
         isActive: Bool,
-        sizeInBytes: Int64
+        runningInstanceCount: Int,
+        sizeInBytes: Int64,
+        ownershipSummary: String,
+        safetyClassification: SafetyClassification
     ) {
         self.displayName = displayName
         self.bundleIdentifier = bundleIdentifier
@@ -29,7 +41,10 @@ public struct XcodeInstall: Codable, Equatable, Identifiable, Sendable {
         self.path = path
         self.developerDirectoryPath = developerDirectoryPath
         self.isActive = isActive
+        self.runningInstanceCount = runningInstanceCount
         self.sizeInBytes = sizeInBytes
+        self.ownershipSummary = ownershipSummary
+        self.safetyClassification = safetyClassification
     }
 }
 
@@ -48,12 +63,118 @@ public struct StorageCategoryUsage: Codable, Equatable, Identifiable, Sendable {
     public let title: String
     public let bytes: Int64
     public let paths: [String]
+    public let ownershipSummary: String
+    public let safetyClassification: SafetyClassification
 
-    public init(kind: StorageCategoryKind, title: String, bytes: Int64, paths: [String]) {
+    public init(
+        kind: StorageCategoryKind,
+        title: String,
+        bytes: Int64,
+        paths: [String],
+        ownershipSummary: String,
+        safetyClassification: SafetyClassification
+    ) {
         self.kind = kind
         self.title = title
         self.bytes = bytes
         self.paths = paths
+        self.ownershipSummary = ownershipSummary
+        self.safetyClassification = safetyClassification
+    }
+}
+
+public struct SimulatorRuntimeRecord: Codable, Equatable, Identifiable, Sendable {
+    public var id: String { identifier }
+
+    public let identifier: String
+    public let name: String
+    public let version: String?
+    public let isAvailable: Bool
+    public let bundlePath: String?
+    public let sizeInBytes: Int64
+    public let ownershipSummary: String
+    public let safetyClassification: SafetyClassification
+
+    public init(
+        identifier: String,
+        name: String,
+        version: String?,
+        isAvailable: Bool,
+        bundlePath: String?,
+        sizeInBytes: Int64,
+        ownershipSummary: String,
+        safetyClassification: SafetyClassification
+    ) {
+        self.identifier = identifier
+        self.name = name
+        self.version = version
+        self.isAvailable = isAvailable
+        self.bundlePath = bundlePath
+        self.sizeInBytes = sizeInBytes
+        self.ownershipSummary = ownershipSummary
+        self.safetyClassification = safetyClassification
+    }
+}
+
+public struct SimulatorDeviceRecord: Codable, Equatable, Identifiable, Sendable {
+    public var id: String { udid }
+
+    public let udid: String
+    public let name: String
+    public let runtimeIdentifier: String
+    public let runtimeName: String?
+    public let state: String
+    public let isAvailable: Bool
+    public let dataPath: String
+    public let sizeInBytes: Int64
+    public let runningInstanceCount: Int
+    public let ownershipSummary: String
+    public let safetyClassification: SafetyClassification
+
+    public init(
+        udid: String,
+        name: String,
+        runtimeIdentifier: String,
+        runtimeName: String?,
+        state: String,
+        isAvailable: Bool,
+        dataPath: String,
+        sizeInBytes: Int64,
+        runningInstanceCount: Int,
+        ownershipSummary: String,
+        safetyClassification: SafetyClassification
+    ) {
+        self.udid = udid
+        self.name = name
+        self.runtimeIdentifier = runtimeIdentifier
+        self.runtimeName = runtimeName
+        self.state = state
+        self.isAvailable = isAvailable
+        self.dataPath = dataPath
+        self.sizeInBytes = sizeInBytes
+        self.runningInstanceCount = runningInstanceCount
+        self.ownershipSummary = ownershipSummary
+        self.safetyClassification = safetyClassification
+    }
+}
+
+public struct SimulatorInventory: Codable, Equatable, Sendable {
+    public let devices: [SimulatorDeviceRecord]
+    public let runtimes: [SimulatorRuntimeRecord]
+
+    public init(devices: [SimulatorDeviceRecord], runtimes: [SimulatorRuntimeRecord]) {
+        self.devices = devices
+        self.runtimes = runtimes
+    }
+}
+
+public struct RuntimeTelemetry: Codable, Equatable, Sendable {
+    public let totalXcodeRunningInstances: Int
+    public let totalSimulatorAppRunningInstances: Int
+
+    public init(totalXcodeRunningInstances: Int, totalSimulatorAppRunningInstances: Int) {
+        self.totalXcodeRunningInstances = totalXcodeRunningInstances
+        self.totalSimulatorAppRunningInstances = totalSimulatorAppRunningInstances
     }
 }
 
@@ -72,16 +193,22 @@ public struct XcodeInventorySnapshot: Codable, Equatable, Sendable {
     public let activeDeveloperDirectoryPath: String?
     public let installs: [XcodeInstall]
     public let storage: XcodeStorageUsage
+    public let simulator: SimulatorInventory
+    public let runtimeTelemetry: RuntimeTelemetry
 
     public init(
         scannedAt: Date,
         activeDeveloperDirectoryPath: String?,
         installs: [XcodeInstall],
-        storage: XcodeStorageUsage
+        storage: XcodeStorageUsage,
+        simulator: SimulatorInventory,
+        runtimeTelemetry: RuntimeTelemetry
     ) {
         self.scannedAt = scannedAt
         self.activeDeveloperDirectoryPath = activeDeveloperDirectoryPath
         self.installs = installs
         self.storage = storage
+        self.simulator = simulator
+        self.runtimeTelemetry = runtimeTelemetry
     }
 }

@@ -4,7 +4,7 @@ Native macOS tooling (Swift + SwiftUI) to inventory, understand, and clean Xcode
 
 ## Sprint Status
 
-Implemented through Sprint 2:
+Implemented through Sprint 3:
 - Read-only Xcode installation inventory scanner.
 - Active developer directory detection (`xcode-select -p`).
 - Read-only storage accounting for:
@@ -13,9 +13,16 @@ Implemented through Sprint 2:
 - Archives.
 - iOS DeviceSupport.
 - Simulator data (devices, caches, runtimes path).
+- Ownership attribution and safety classification for storage categories and simulator artifacts.
+- Runtime telemetry:
+- Per-Xcode running instance count.
+- Per-simulator-device running/booted state and instance count.
+- Itemized simulator inventory:
+- Per runtime metadata and size.
+- Per device metadata and size.
 - SwiftUI app shell showing inventory and storage totals.
 - CLI JSON output with inventory and storage models.
-- Unit tests for multi-Xcode discovery and storage categorization.
+- Unit tests for multi-Xcode discovery, storage categorization, telemetry, and simulator itemization.
 
 ## Quick Start
 

@@ -26,12 +26,78 @@ public protocol HomeDirectoryProviding {
     func homeDirectoryURL() -> URL
 }
 
+public struct RunningApplicationRecord: Equatable, Sendable {
+    public let bundleIdentifier: String?
+    public let bundlePath: String?
+    public let executablePath: String?
+    public let processIdentifier: Int32
+
+    public init(bundleIdentifier: String?, bundlePath: String?, executablePath: String?, processIdentifier: Int32) {
+        self.bundleIdentifier = bundleIdentifier
+        self.bundlePath = bundlePath
+        self.executablePath = executablePath
+        self.processIdentifier = processIdentifier
+    }
+}
+
+public protocol RunningApplicationsProviding {
+    func runningApplications() -> [RunningApplicationRecord]
+}
+
+public struct SimulatorDeviceListingRecord: Equatable, Sendable {
+    public let udid: String
+    public let name: String
+    public let runtimeIdentifier: String
+    public let state: String
+    public let isAvailable: Bool
+
+    public init(udid: String, name: String, runtimeIdentifier: String, state: String, isAvailable: Bool) {
+        self.udid = udid
+        self.name = name
+        self.runtimeIdentifier = runtimeIdentifier
+        self.state = state
+        self.isAvailable = isAvailable
+    }
+}
+
+public struct SimulatorRuntimeListingRecord: Equatable, Sendable {
+    public let identifier: String
+    public let name: String
+    public let version: String?
+    public let isAvailable: Bool
+    public let bundlePath: String?
+
+    public init(identifier: String, name: String, version: String?, isAvailable: Bool, bundlePath: String?) {
+        self.identifier = identifier
+        self.name = name
+        self.version = version
+        self.isAvailable = isAvailable
+        self.bundlePath = bundlePath
+    }
+}
+
+public struct SimulatorListing: Equatable, Sendable {
+    public let devices: [SimulatorDeviceListingRecord]
+    public let runtimes: [SimulatorRuntimeListingRecord]
+
+    public init(devices: [SimulatorDeviceListingRecord], runtimes: [SimulatorRuntimeListingRecord]) {
+        self.devices = devices
+        self.runtimes = runtimes
+    }
+}
+
+public protocol SimulatorListingProviding {
+    func simulatorListing() -> SimulatorListing
+}
+
 public struct XcodeInventoryScanner {
     private let applicationDiscoverer: XcodeApplicationDiscovering
     private let activeDeveloperDirectoryProvider: ActiveDeveloperDirectoryProviding
     private let infoPlistReader: InfoPlistReading
     private let pathSizer: PathSizing
     private let homeDirectoryProvider: HomeDirectoryProviding
+    private let runningApplicationsProvider: RunningApplicationsProviding
+    private let simulatorListingProvider: SimulatorListingProviding
     private let now: () -> Date
 
     public init(
@@ -40,6 +106,8 @@ public struct XcodeInventoryScanner {
         infoPlistReader: InfoPlistReading = InfoPlistFileReader(),
         pathSizer: PathSizing = FileSystemPathSizer(),
         homeDirectoryProvider: HomeDirectoryProviding = CurrentUserHomeDirectoryProvider(),
+        runningApplicationsProvider: RunningApplicationsProviding = SystemRunningApplicationsProvider(),
+        simulatorListingProvider: SimulatorListingProviding = SimctlSimulatorListingProvider(),
         now: @escaping () -> Date = Date.init
     ) {
         self.applicationDiscoverer = applicationDiscoverer
@@ -47,12 +115,17 @@ public struct XcodeInventoryScanner {
         self.infoPlistReader = infoPlistReader
         self.pathSizer = pathSizer
         self.homeDirectoryProvider = homeDirectoryProvider
+        self.runningApplicationsProvider = runningApplicationsProvider
+        self.simulatorListingProvider = simulatorListingProvider
         self.now = now
     }
 
     public func scan() -> XcodeInventorySnapshot {
         let activeDeveloperDirectoryURL = activeDeveloperDirectoryProvider.activeDeveloperDirectoryURL()
         let activeDeveloperDirectoryPath = normalizedPath(for: activeDeveloperDirectoryURL)
+
+        let runningApplications = runningApplicationsProvider.runningApplications()
+        let xcodeRunningCountsByPath = runningXcodeInstanceCountByInstallPath(from: runningApplications)
 
         let installs = deduplicatedApplicationURLs(from: applicationDiscoverer.discoverXcodeApplicationURLs())
             .map { appURL -> XcodeInstall in
@@ -68,6 +141,7 @@ public struct XcodeInventoryScanner {
                 let developerDirectoryURL = appURL.appendingPathComponent("Contents/Developer", isDirectory: true)
                 let developerDirectoryPath = normalizedPath(for: developerDirectoryURL) ?? developerDirectoryURL.path
                 let installPath = normalizedPath(for: appURL) ?? appURL.path
+                let runningInstanceCount = xcodeRunningCountsByPath[installPath] ?? 0
 
                 return XcodeInstall(
                     displayName: displayName,
@@ -80,12 +154,18 @@ public struct XcodeInventoryScanner {
                         activeDeveloperDirectoryPath: activeDeveloperDirectoryPath,
                         installDeveloperDirectoryPath: developerDirectoryPath
                     ),
-                    sizeInBytes: pathSizer.allocatedSize(at: appURL)
+                    runningInstanceCount: runningInstanceCount,
+                    sizeInBytes: pathSizer.allocatedSize(at: appURL),
+                    ownershipSummary: "Owned by this Xcode installation bundle",
+                    safetyClassification: .destructive
                 )
             }
             .sorted { lhs, rhs in
                 if lhs.isActive != rhs.isActive {
                     return lhs.isActive
+                }
+                if lhs.runningInstanceCount != rhs.runningInstanceCount {
+                    return lhs.runningInstanceCount > rhs.runningInstanceCount
                 }
                 if lhs.displayName != rhs.displayName {
                     return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
@@ -93,13 +173,22 @@ public struct XcodeInventoryScanner {
                 return lhs.path.localizedCaseInsensitiveCompare(rhs.path) == .orderedAscending
             }
 
+        let simulatorListing = simulatorListingProvider.simulatorListing()
+        let simulatorInventory = buildSimulatorInventory(from: simulatorListing)
         let storage = buildStorageUsage(installs: installs)
+
+        let runtimeTelemetry = RuntimeTelemetry(
+            totalXcodeRunningInstances: installs.reduce(0) { $0 + $1.runningInstanceCount },
+            totalSimulatorAppRunningInstances: runningSimulatorAppInstanceCount(from: runningApplications)
+        )
 
         return XcodeInventorySnapshot(
             scannedAt: now(),
             activeDeveloperDirectoryPath: activeDeveloperDirectoryPath,
             installs: installs,
-            storage: storage
+            storage: storage,
+            simulator: simulatorInventory,
+            runtimeTelemetry: runtimeTelemetry
         )
     }
 
@@ -115,35 +204,45 @@ public struct XcodeInventoryScanner {
             makeCategory(
                 kind: .xcodeApplications,
                 title: "Xcode Applications",
-                paths: installs.map { URL(filePath: $0.path, directoryHint: .isDirectory) }
+                paths: installs.map { URL(filePath: $0.path, directoryHint: .isDirectory) },
+                ownershipSummary: "Owned by individual Xcode installation bundles",
+                safetyClassification: .destructive
             ),
             makeCategory(
                 kind: .derivedData,
                 title: "Derived Data",
-                paths: [homeDirectoryURL.appendingPathComponent("Library/Developer/Xcode/DerivedData", isDirectory: true)]
+                paths: [homeDirectoryURL.appendingPathComponent("Library/Developer/Xcode/DerivedData", isDirectory: true)],
+                ownershipSummary: "Owned by local project build artifacts",
+                safetyClassification: .regenerable
             ),
             makeCategory(
                 kind: .archives,
                 title: "Archives",
-                paths: [homeDirectoryURL.appendingPathComponent("Library/Developer/Xcode/Archives", isDirectory: true)]
+                paths: [homeDirectoryURL.appendingPathComponent("Library/Developer/Xcode/Archives", isDirectory: true)],
+                ownershipSummary: "Owned by archived local build outputs",
+                safetyClassification: .conditionallySafe
             ),
             makeCategory(
                 kind: .deviceSupport,
                 title: "Device Support",
-                paths: [homeDirectoryURL.appendingPathComponent("Library/Developer/Xcode/iOS DeviceSupport", isDirectory: true)]
+                paths: [homeDirectoryURL.appendingPathComponent("Library/Developer/Xcode/iOS DeviceSupport", isDirectory: true)],
+                ownershipSummary: "Owned by local support files for connected devices",
+                safetyClassification: .regenerable
             ),
             makeCategory(
                 kind: .simulatorData,
                 title: "Simulator Data",
-                paths: simulatorPaths
+                paths: simulatorPaths,
+                ownershipSummary: "Owned by CoreSimulator runtimes and device sandboxes",
+                safetyClassification: .conditionallySafe
             ),
         ]
-            .sorted { lhs, rhs in
-                if lhs.bytes != rhs.bytes {
-                    return lhs.bytes > rhs.bytes
-                }
-                return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+        .sorted { lhs, rhs in
+            if lhs.bytes != rhs.bytes {
+                return lhs.bytes > rhs.bytes
             }
+            return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+        }
 
         let totalBytes = categories.reduce(Int64(0)) { partialResult, category in
             partialResult + category.bytes
@@ -152,7 +251,90 @@ public struct XcodeInventoryScanner {
         return XcodeStorageUsage(categories: categories, totalBytes: totalBytes)
     }
 
-    private func makeCategory(kind: StorageCategoryKind, title: String, paths: [URL]) -> StorageCategoryUsage {
+    private func buildSimulatorInventory(from listing: SimulatorListing) -> SimulatorInventory {
+        let homeDirectoryURL = homeDirectoryProvider.homeDirectoryURL()
+        let simulatorDeviceRoot = homeDirectoryURL.appendingPathComponent("Library/Developer/CoreSimulator/Devices", isDirectory: true)
+
+        let runtimes = listing.runtimes
+            .map { runtime -> SimulatorRuntimeRecord in
+                let bundlePath = runtime.bundlePath.flatMap { path in
+                    normalizedPath(for: URL(filePath: path, directoryHint: .isDirectory)) ?? path
+                }
+                let sizeInBytes: Int64
+                if let bundlePath {
+                    let url = URL(filePath: bundlePath, directoryHint: .isDirectory)
+                    sizeInBytes = pathSizer.fileExists(at: url) ? pathSizer.allocatedSize(at: url) : 0
+                } else {
+                    sizeInBytes = 0
+                }
+
+                return SimulatorRuntimeRecord(
+                    identifier: runtime.identifier,
+                    name: runtime.name,
+                    version: runtime.version,
+                    isAvailable: runtime.isAvailable,
+                    bundlePath: bundlePath,
+                    sizeInBytes: sizeInBytes,
+                    ownershipSummary: "Owned by CoreSimulator runtime files",
+                    safetyClassification: .conditionallySafe
+                )
+            }
+            .sorted { lhs, rhs in
+                if lhs.isAvailable != rhs.isAvailable {
+                    return lhs.isAvailable
+                }
+                if lhs.name != rhs.name {
+                    return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+                }
+                return lhs.identifier.localizedCaseInsensitiveCompare(rhs.identifier) == .orderedAscending
+            }
+
+        let runtimeNamesByIdentifier = Dictionary(uniqueKeysWithValues: runtimes.map { ($0.identifier, $0.name) })
+
+        let devices = listing.devices
+            .map { device -> SimulatorDeviceRecord in
+                let dataPathURL = simulatorDeviceRoot.appendingPathComponent(device.udid, isDirectory: true)
+                let normalizedDataPath = normalizedPath(for: dataPathURL) ?? dataPathURL.path
+                let sizeInBytes = pathSizer.fileExists(at: dataPathURL) ? pathSizer.allocatedSize(at: dataPathURL) : 0
+                let isRunning = isBootedState(device.state)
+                let runtimeName = runtimeNamesByIdentifier[device.runtimeIdentifier]
+                let ownership = runtimeName.map { "Owned by simulator device data for \($0)" }
+                    ?? "Owned by simulator device data"
+
+                return SimulatorDeviceRecord(
+                    udid: device.udid,
+                    name: device.name,
+                    runtimeIdentifier: device.runtimeIdentifier,
+                    runtimeName: runtimeName,
+                    state: device.state,
+                    isAvailable: device.isAvailable,
+                    dataPath: normalizedDataPath,
+                    sizeInBytes: sizeInBytes,
+                    runningInstanceCount: isRunning ? 1 : 0,
+                    ownershipSummary: ownership,
+                    safetyClassification: .conditionallySafe
+                )
+            }
+            .sorted { lhs, rhs in
+                if lhs.runningInstanceCount != rhs.runningInstanceCount {
+                    return lhs.runningInstanceCount > rhs.runningInstanceCount
+                }
+                if lhs.name != rhs.name {
+                    return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+                }
+                return lhs.udid.localizedCaseInsensitiveCompare(rhs.udid) == .orderedAscending
+            }
+
+        return SimulatorInventory(devices: devices, runtimes: runtimes)
+    }
+
+    private func makeCategory(
+        kind: StorageCategoryKind,
+        title: String,
+        paths: [URL],
+        ownershipSummary: String,
+        safetyClassification: SafetyClassification
+    ) -> StorageCategoryUsage {
         var seen = Set<String>()
         var existingPaths: [String] = []
         var bytes = Int64(0)
@@ -169,7 +351,103 @@ public struct XcodeInventoryScanner {
             bytes += pathSizer.allocatedSize(at: pathURL)
         }
 
-        return StorageCategoryUsage(kind: kind, title: title, bytes: bytes, paths: existingPaths)
+        return StorageCategoryUsage(
+            kind: kind,
+            title: title,
+            bytes: bytes,
+            paths: existingPaths,
+            ownershipSummary: ownershipSummary,
+            safetyClassification: safetyClassification
+        )
+    }
+
+    private func runningXcodeInstanceCountByInstallPath(from runningApplications: [RunningApplicationRecord]) -> [String: Int] {
+        var result: [String: Int] = [:]
+        for record in runningApplications {
+            guard let bundlePath = xcodeBundlePath(for: record),
+                  isLikelyXcodeApplication(record: record, bundlePath: bundlePath) else {
+                continue
+            }
+            result[bundlePath, default: 0] += 1
+        }
+        return result
+    }
+
+    private func runningSimulatorAppInstanceCount(from runningApplications: [RunningApplicationRecord]) -> Int {
+        Set(
+            runningApplications.compactMap { record -> Int32? in
+                isSimulatorApplication(record: record) ? record.processIdentifier : nil
+            }
+        ).count
+    }
+
+    private func xcodeBundlePath(for record: RunningApplicationRecord) -> String? {
+        if let path = record.bundlePath {
+            return normalizedPath(for: URL(filePath: path, directoryHint: .isDirectory))
+        }
+        guard let executablePath = record.executablePath else {
+            return nil
+        }
+        let executableURL = URL(filePath: executablePath)
+        let appURL = executableURL
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        guard appURL.pathExtension == "app" else {
+            return nil
+        }
+        return normalizedPath(for: appURL)
+    }
+
+    private func isLikelyXcodeApplication(record: RunningApplicationRecord, bundlePath: String) -> Bool {
+        let bundleIdentifier = record.bundleIdentifier
+        if bundleIdentifier == "com.apple.dt.Xcode" || bundleIdentifier == "com.apple.dt.XcodeBeta" {
+            return true
+        }
+
+        // Fallback for unusual process metadata: only treat the main Xcode executable as an app instance.
+        guard bundleIdentifier == nil else {
+            return false
+        }
+        guard let executablePath = record.executablePath else {
+            return false
+        }
+        let executableName = URL(filePath: executablePath).lastPathComponent.lowercased()
+        guard executableName == "xcode" else {
+            return false
+        }
+
+        let lowercasedName = URL(filePath: bundlePath).lastPathComponent.lowercased()
+        return lowercasedName.hasPrefix("xcode")
+    }
+
+    private func isSimulatorApplication(record: RunningApplicationRecord) -> Bool {
+        if record.bundleIdentifier == "com.apple.iphonesimulator" {
+            return true
+        }
+
+        guard record.bundleIdentifier == nil else {
+            return false
+        }
+
+        if let executablePath = record.executablePath {
+            let normalizedExecutablePath = URL(filePath: executablePath)
+                .standardizedFileURL
+                .resolvingSymlinksInPath()
+                .path
+            return normalizedExecutablePath.hasSuffix("/Simulator.app/Contents/MacOS/Simulator")
+        }
+
+        if let bundlePath = record.bundlePath {
+            return URL(filePath: bundlePath).lastPathComponent == "Simulator.app"
+        }
+
+        return false
+    }
+
+    private func isBootedState(_ state: String) -> Bool {
+        let lowered = state.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return lowered == "booted" || lowered == "booting"
     }
 
     private func deduplicatedApplicationURLs(from applicationURLs: [URL]) -> [URL] {
@@ -384,6 +662,115 @@ public struct CurrentUserHomeDirectoryProvider: HomeDirectoryProviding {
 
     public func homeDirectoryURL() -> URL {
         FileManager.default.homeDirectoryForCurrentUser
+    }
+}
+
+public struct SystemRunningApplicationsProvider: RunningApplicationsProviding {
+    public init() {}
+
+    public func runningApplications() -> [RunningApplicationRecord] {
+        NSWorkspace.shared.runningApplications.map { app in
+            RunningApplicationRecord(
+                bundleIdentifier: app.bundleIdentifier,
+                bundlePath: app.bundleURL?.path,
+                executablePath: app.executableURL?.path,
+                processIdentifier: app.processIdentifier
+            )
+        }
+    }
+}
+
+public struct SimctlSimulatorListingProvider: SimulatorListingProviding {
+    private let commandRunner: CommandRunning
+
+    public init(commandRunner: CommandRunning = ProcessCommandRunner()) {
+        self.commandRunner = commandRunner
+    }
+
+    public func simulatorListing() -> SimulatorListing {
+        let devicesJSON = try? commandRunner.run(
+            launchPath: "/usr/bin/xcrun",
+            arguments: ["simctl", "list", "devices", "--json"]
+        )
+        let runtimesJSON = try? commandRunner.run(
+            launchPath: "/usr/bin/xcrun",
+            arguments: ["simctl", "list", "runtimes", "--json"]
+        )
+        return SimulatorListing(
+            devices: parseDevices(json: devicesJSON),
+            runtimes: parseRuntimes(json: runtimesJSON)
+        )
+    }
+
+    private func parseDevices(json: String?) -> [SimulatorDeviceListingRecord] {
+        guard let json,
+              let data = json.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let devicesByRuntime = object["devices"] as? [String: Any] else {
+            return []
+        }
+
+        var devices: [SimulatorDeviceListingRecord] = []
+        for (runtimeIdentifier, rawDevices) in devicesByRuntime {
+            guard let entries = rawDevices as? [[String: Any]] else {
+                continue
+            }
+            for entry in entries {
+                guard let udid = entry["udid"] as? String else {
+                    continue
+                }
+                let name = (entry["name"] as? String) ?? "Unknown Device"
+                let state = (entry["state"] as? String) ?? "Unknown"
+                let isAvailable = parseAvailability(entry["isAvailable"])
+                devices.append(
+                    SimulatorDeviceListingRecord(
+                        udid: udid,
+                        name: name,
+                        runtimeIdentifier: runtimeIdentifier,
+                        state: state,
+                        isAvailable: isAvailable
+                    )
+                )
+            }
+        }
+        return devices
+    }
+
+    private func parseRuntimes(json: String?) -> [SimulatorRuntimeListingRecord] {
+        guard let json,
+              let data = json.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let runtimesRaw = object["runtimes"] as? [[String: Any]] else {
+            return []
+        }
+
+        return runtimesRaw.compactMap { entry in
+            guard let identifier = entry["identifier"] as? String else {
+                return nil
+            }
+            let name = (entry["name"] as? String) ?? identifier
+            let version = entry["version"] as? String
+            let bundlePath = entry["bundlePath"] as? String
+            let isAvailable = parseAvailability(entry["isAvailable"])
+            return SimulatorRuntimeListingRecord(
+                identifier: identifier,
+                name: name,
+                version: version,
+                isAvailable: isAvailable,
+                bundlePath: bundlePath
+            )
+        }
+    }
+
+    private func parseAvailability(_ value: Any?) -> Bool {
+        if let value = value as? Bool {
+            return value
+        }
+        if let value = value as? String {
+            let lowered = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return lowered == "yes" || lowered == "true" || lowered == "available"
+        }
+        return false
     }
 }
 

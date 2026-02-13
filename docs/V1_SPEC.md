@@ -79,6 +79,7 @@ Ship a native macOS app (Swift + SwiftUI) that helps users understand and contro
 - Rescan updates incrementally and keeps UI responsive.
 - Cleanup operations are cancellable where practical.
 - App survives partial failures and reports per-item errors.
+- Long-running scans must provide progress updates and current-phase status without freezing the UI.
 
 ## 5) Guardrails
 - Block cleanup when Xcode process is active, unless action is explicitly safe while running.
@@ -99,6 +100,8 @@ Ship a native macOS app (Swift + SwiftUI) that helps users understand and contro
 - Why it exists.
 - Consequences of cleanup.
 - Recovery path.
+- GUI scan experience must show a progress bar and current scan phase (for example: discovering Xcode installs, sizing DerivedData, parsing simulators).
+- CLI scan experience must show progress updates and current scan phase during execution, in addition to final machine-readable output.
 
 ## 7) Acceptance Criteria (Release Gate)
 - User with multiple Xcodes can see all installs, versions, paths, and sizes.
@@ -106,6 +109,7 @@ Ship a native macOS app (Swift + SwiftUI) that helps users understand and contro
 - User can identify temporary vs non-temporary storage with clear rationale.
 - User can see simulator devices individually (not only aggregate simulator totals).
 - User can see per-device simulator running/booted status and instance count.
+- During long scans, user can see progress percentage and current phase in both GUI and CLI.
 - User can select and delete one or more simulator devices with accurate reclaim reporting.
 - User can run dry-run preview and verify exact paths before cleanup.
 - User can safely execute cleanup and see accurate reclaimed space.
@@ -122,6 +126,7 @@ Ship a native macOS app (Swift + SwiftUI) that helps users understand and contro
 - Size accounting and formatting.
 - Integration tests:
 - Scan on fixture trees representing single and multi-Xcode setups.
+- Scan progress tests validating phase ordering and percentage progression.
 - Cleanup dry-run and execute workflows.
 - Selective simulator-device deletion workflows, including blocked booted-device cases.
 - Runtime telemetry tests covering Xcode instance counts and simulator state/count signals.

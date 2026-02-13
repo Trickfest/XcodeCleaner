@@ -44,6 +44,20 @@ struct XcodeInventoryScannerTests {
             .appendingPathComponent("Library/Developer/CoreSimulator/Caches", isDirectory: true)
             .path
         let simulatorRuntimesPath = "/Library/Developer/CoreSimulator/Profiles/Runtimes"
+        let runtime18BundlePath = fakeHome
+            .appendingPathComponent("Library/Developer/CoreSimulator/Profiles/Runtimes/iOS-18.simruntime", isDirectory: true)
+            .path
+        let runtime17BundlePath = fakeHome
+            .appendingPathComponent("Library/Developer/CoreSimulator/Profiles/Runtimes/iOS-17.simruntime", isDirectory: true)
+            .path
+        let simulatorDevice1UDID = "1111-AAAA-2222-BBBB"
+        let simulatorDevice2UDID = "3333-CCCC-4444-DDDD"
+        let simulatorDevice1Path = fakeHome
+            .appendingPathComponent("Library/Developer/CoreSimulator/Devices/\(simulatorDevice1UDID)", isDirectory: true)
+            .path
+        let simulatorDevice2Path = fakeHome
+            .appendingPathComponent("Library/Developer/CoreSimulator/Devices/\(simulatorDevice2UDID)", isDirectory: true)
+            .path
 
         let scanner = XcodeInventoryScanner(
             applicationDiscoverer: StubDiscoverer(urls: [xcode16, xcode16, xcodeBeta]),
@@ -57,8 +71,86 @@ struct XcodeInventoryScannerTests {
                 simulatorDevicesPath: 600,
                 simulatorCachesPath: 700,
                 simulatorRuntimesPath: 800,
+                runtime18BundlePath: 450,
+                runtime17BundlePath: 350,
+                simulatorDevice1Path: 120,
+                simulatorDevice2Path: 90,
             ]),
             homeDirectoryProvider: StubHomeDirectoryProvider(url: fakeHome),
+            runningApplicationsProvider: StubRunningApplicationsProvider(records: [
+                RunningApplicationRecord(
+                    bundleIdentifier: "com.apple.dt.Xcode",
+                    bundlePath: xcodeBeta.path,
+                    executablePath: nil,
+                    processIdentifier: 1001
+                ),
+                RunningApplicationRecord(
+                    bundleIdentifier: "com.apple.dt.Xcode",
+                    bundlePath: xcodeBeta.path,
+                    executablePath: nil,
+                    processIdentifier: 1002
+                ),
+                RunningApplicationRecord(
+                    bundleIdentifier: "com.apple.dt.Xcode",
+                    bundlePath: xcode16.path,
+                    executablePath: nil,
+                    processIdentifier: 1003
+                ),
+                RunningApplicationRecord(
+                    bundleIdentifier: nil,
+                    bundlePath: xcodeBeta.path,
+                    executablePath: "\(xcodeBeta.path)/Contents/MacOS/XcodeHelper",
+                    processIdentifier: 1004
+                ),
+                RunningApplicationRecord(
+                    bundleIdentifier: "com.apple.iphonesimulator",
+                    bundlePath: "/Applications/Simulator.app",
+                    executablePath: nil,
+                    processIdentifier: 2001
+                ),
+                RunningApplicationRecord(
+                    bundleIdentifier: nil,
+                    bundlePath: "/Applications/Simulator.app",
+                    executablePath: "/Applications/Simulator.app/Contents/MacOS/SimulatorTrampoline",
+                    processIdentifier: 2002
+                ),
+            ]),
+            simulatorListingProvider: StubSimulatorListingProvider(
+                listing: SimulatorListing(
+                    devices: [
+                        SimulatorDeviceListingRecord(
+                            udid: simulatorDevice1UDID,
+                            name: "iPhone 15 Pro",
+                            runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.iOS-18-0",
+                            state: "Booted",
+                            isAvailable: true
+                        ),
+                        SimulatorDeviceListingRecord(
+                            udid: simulatorDevice2UDID,
+                            name: "iPhone 14",
+                            runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.iOS-17-0",
+                            state: "Shutdown",
+                            isAvailable: true
+                        ),
+                    ],
+                    runtimes: [
+                        SimulatorRuntimeListingRecord(
+                            identifier: "com.apple.CoreSimulator.SimRuntime.iOS-18-0",
+                            name: "iOS 18.0",
+                            version: "18.0",
+                            isAvailable: true,
+                            bundlePath: runtime18BundlePath
+                        ),
+                        SimulatorRuntimeListingRecord(
+                            identifier: "com.apple.CoreSimulator.SimRuntime.iOS-17-0",
+                            name: "iOS 17.0",
+                            version: "17.0",
+                            isAvailable: false,
+                            bundlePath: runtime17BundlePath
+                        ),
+                    ]
+                )
+            ),
             now: { Date(timeIntervalSince1970: 42) }
         )
 
@@ -70,16 +162,32 @@ struct XcodeInventoryScannerTests {
         #expect(snapshot.installs.first?.displayName == "Xcode-16.1-beta")
         #expect(snapshot.installs.first?.version == "16.1")
         #expect(snapshot.installs.first?.build == "16B500")
+        #expect(snapshot.installs.first?.runningInstanceCount == 2)
         #expect(snapshot.installs.first?.sizeInBytes == 2_000)
+        #expect(snapshot.installs.first?.ownershipSummary == "Owned by this Xcode installation bundle")
+        #expect(snapshot.installs.first?.safetyClassification == .destructive)
         #expect(snapshot.storage.totalBytes == 6_300)
         #expect(snapshot.storage.categories.count == 5)
         #expect(snapshot.storage.categories[0].kind == .xcodeApplications)
         #expect(snapshot.storage.categories[0].bytes == 3_000)
+        #expect(snapshot.storage.categories[0].safetyClassification == .destructive)
         #expect(snapshot.storage.categories[1].kind == .simulatorData)
         #expect(snapshot.storage.categories[1].bytes == 2_100)
+        #expect(snapshot.storage.categories[1].safetyClassification == .conditionallySafe)
         #expect(bytes(for: .deviceSupport, in: snapshot) == 500)
         #expect(bytes(for: .archives, in: snapshot) == 400)
         #expect(bytes(for: .derivedData, in: snapshot) == 300)
+        #expect(snapshot.runtimeTelemetry.totalXcodeRunningInstances == 3)
+        #expect(snapshot.runtimeTelemetry.totalSimulatorAppRunningInstances == 1)
+        #expect(snapshot.simulator.runtimes.count == 2)
+        #expect(snapshot.simulator.runtimes[0].name == "iOS 18.0")
+        #expect(snapshot.simulator.runtimes[0].sizeInBytes == 450)
+        #expect(snapshot.simulator.devices.count == 2)
+        #expect(snapshot.simulator.devices[0].name == "iPhone 15 Pro")
+        #expect(snapshot.simulator.devices[0].runtimeName == "iOS 18.0")
+        #expect(snapshot.simulator.devices[0].runningInstanceCount == 1)
+        #expect(snapshot.simulator.devices[0].safetyClassification == .conditionallySafe)
+        #expect(snapshot.simulator.devices[1].runningInstanceCount == 0)
     }
 
     @Test("Scanner falls back to CFBundleVersion when DTXcodeBuild is missing")
@@ -101,6 +209,10 @@ struct XcodeInventoryScannerTests {
             activeDeveloperDirectoryProvider: StubActiveDeveloperProvider(url: nil),
             pathSizer: StubPathSizer(sizeByPath: [xcode.path: 512]),
             homeDirectoryProvider: StubHomeDirectoryProvider(url: sandbox.url),
+            runningApplicationsProvider: StubRunningApplicationsProvider(records: []),
+            simulatorListingProvider: StubSimulatorListingProvider(
+                listing: SimulatorListing(devices: [], runtimes: [])
+            ),
             now: { Date(timeIntervalSince1970: 99) }
         )
 
@@ -110,7 +222,10 @@ struct XcodeInventoryScannerTests {
         #expect(snapshot.installs[0].build == "15F31d")
         #expect(snapshot.installs[0].version == "15.4")
         #expect(snapshot.installs[0].sizeInBytes == 512)
+        #expect(snapshot.installs[0].runningInstanceCount == 0)
         #expect(bytes(for: .xcodeApplications, in: snapshot) == 512)
+        #expect(snapshot.runtimeTelemetry.totalXcodeRunningInstances == 0)
+        #expect(snapshot.simulator.devices.isEmpty)
     }
 }
 
@@ -151,6 +266,22 @@ private struct StubHomeDirectoryProvider: HomeDirectoryProviding {
 
     func homeDirectoryURL() -> URL {
         url
+    }
+}
+
+private struct StubRunningApplicationsProvider: RunningApplicationsProviding {
+    let records: [RunningApplicationRecord]
+
+    func runningApplications() -> [RunningApplicationRecord] {
+        records
+    }
+}
+
+private struct StubSimulatorListingProvider: SimulatorListingProviding {
+    let listing: SimulatorListing
+
+    func simulatorListing() -> SimulatorListing {
+        listing
     }
 }
 
