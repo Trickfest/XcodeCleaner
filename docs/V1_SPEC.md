@@ -56,6 +56,7 @@ Ship a native macOS app (Swift + SwiftUI) that helps users understand and contro
 - Direct delete only when trash is not feasible or user opts in.
 - Switch active Xcode (developer directory) from the UI.
 - Optional uninstall flow for selected Xcode bundle(s) with guardrails.
+- Per-install Xcode uninstall selection (delete one or more installs while keeping others).
 - Support selective deletion of one or more simulator devices in a single operation.
 
 ### 3.6 Automation
@@ -86,6 +87,8 @@ Ship a native macOS app (Swift + SwiftUI) that helps users understand and contro
 - Block risky simulator/runtime changes while simulator is running.
 - Block deletion of booted simulator devices and clearly identify why action is blocked.
 - Use live Xcode and simulator instance counts when evaluating destructive-action eligibility.
+- Block uninstall of the active developer-directory Xcode until user switches active selection.
+- Block uninstall of any Xcode install with running instance count greater than zero.
 - Never touch paths outside explicit allowlisted roots.
 - No silent destructive actions.
 
@@ -106,6 +109,8 @@ Ship a native macOS app (Swift + SwiftUI) that helps users understand and contro
 ## 7) Acceptance Criteria (Release Gate)
 - User with multiple Xcodes can see all installs, versions, paths, and sizes.
 - User can see per-install Xcode running status and instance count.
+- User can select one installed Xcode for uninstall while keeping another installed Xcode untouched.
+- User can select any subset of installed Xcodes for uninstall and review the exact uninstall dry-run plan.
 - User can identify temporary vs non-temporary storage with clear rationale.
 - User can see simulator devices individually (not only aggregate simulator totals).
 - User can see per-device simulator running/booted status and instance count.
@@ -128,6 +133,7 @@ Ship a native macOS app (Swift + SwiftUI) that helps users understand and contro
 - Scan on fixture trees representing single and multi-Xcode setups.
 - Scan progress tests validating phase ordering and percentage progression.
 - Cleanup dry-run and execute workflows.
+- Per-install Xcode uninstall workflows, including active/running-install guardrails.
 - Selective simulator-device deletion workflows, including blocked booted-device cases.
 - Runtime telemetry tests covering Xcode instance counts and simulator state/count signals.
 - Guardrail behavior with mocked running processes.

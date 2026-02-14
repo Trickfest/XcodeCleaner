@@ -11,6 +11,36 @@ struct CLIProgressRendererTests {
         #expect(options.showHelp == true)
     }
 
+    @Test("CLI options parse dry-run with categories and simulator selections")
+    func parseDryRunOptions() throws {
+        let options = try CLIOptions.parse(arguments: [
+            "--dry-run",
+            "--plan-category", "derivedData",
+            "--plan-category=deviceSupport",
+            "--plan-simulator-device", "AAA-BBB",
+            "--plan-simulator-device=CCC-DDD",
+        ])
+
+        #expect(options.dryRun == true)
+        #expect(options.selectedCategoryKinds == [.derivedData, .deviceSupport])
+        #expect(options.selectedSimulatorDeviceUDIDs == ["AAA-BBB", "CCC-DDD"])
+    }
+
+    @Test("Dry-run defaults to safe categories when no explicit selections")
+    func parseDryRunDefaults() throws {
+        let options = try CLIOptions.parse(arguments: ["--dry-run"])
+        #expect(options.dryRun == true)
+        #expect(Set(options.selectedCategoryKinds) == Set(DryRunSelection.safeCategoryDefaults.selectedCategoryKinds))
+        #expect(options.selectedSimulatorDeviceUDIDs.isEmpty)
+    }
+
+    @Test("Plan selectors require dry-run mode")
+    func parseSelectorsRequireDryRun() {
+        #expect(throws: CLIOptionsError.requiresDryRun) {
+            try CLIOptions.parse(arguments: ["--plan-category", "derivedData"])
+        }
+    }
+
     @Test("CLI options reject unknown argument")
     func parseUnknownOption() {
         #expect(throws: CLIOptionsError.self) {

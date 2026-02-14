@@ -253,3 +253,74 @@ public struct XcodeInventorySnapshot: Codable, Equatable, Sendable {
         self.runtimeTelemetry = runtimeTelemetry
     }
 }
+
+public struct DryRunSelection: Codable, Equatable, Sendable {
+    public let selectedCategoryKinds: [StorageCategoryKind]
+    public let selectedSimulatorDeviceUDIDs: [String]
+
+    public init(selectedCategoryKinds: [StorageCategoryKind], selectedSimulatorDeviceUDIDs: [String]) {
+        self.selectedCategoryKinds = Array(Set(selectedCategoryKinds)).sorted {
+            $0.rawValue < $1.rawValue
+        }
+        self.selectedSimulatorDeviceUDIDs = Array(Set(selectedSimulatorDeviceUDIDs)).sorted()
+    }
+
+    public static let safeCategoryDefaults = DryRunSelection(
+        selectedCategoryKinds: [.derivedData, .archives, .deviceSupport],
+        selectedSimulatorDeviceUDIDs: []
+    )
+}
+
+public enum DryRunItemKind: String, Codable, Sendable {
+    case storageCategory
+    case simulatorDevice
+}
+
+public struct DryRunPlanItem: Codable, Equatable, Identifiable, Sendable {
+    public var id: String { "\(kind.rawValue):\(title)" }
+
+    public let kind: DryRunItemKind
+    public let title: String
+    public let reclaimableBytes: Int64
+    public let paths: [String]
+    public let ownershipSummary: String
+    public let safetyClassification: SafetyClassification
+
+    public init(
+        kind: DryRunItemKind,
+        title: String,
+        reclaimableBytes: Int64,
+        paths: [String],
+        ownershipSummary: String,
+        safetyClassification: SafetyClassification
+    ) {
+        self.kind = kind
+        self.title = title
+        self.reclaimableBytes = reclaimableBytes
+        self.paths = paths
+        self.ownershipSummary = ownershipSummary
+        self.safetyClassification = safetyClassification
+    }
+}
+
+public struct DryRunPlan: Codable, Equatable, Sendable {
+    public let generatedAt: Date
+    public let selection: DryRunSelection
+    public let items: [DryRunPlanItem]
+    public let totalReclaimableBytes: Int64
+    public let notes: [String]
+
+    public init(
+        generatedAt: Date,
+        selection: DryRunSelection,
+        items: [DryRunPlanItem],
+        totalReclaimableBytes: Int64,
+        notes: [String]
+    ) {
+        self.generatedAt = generatedAt
+        self.selection = selection
+        self.items = items
+        self.totalReclaimableBytes = totalReclaimableBytes
+        self.notes = notes
+    }
+}

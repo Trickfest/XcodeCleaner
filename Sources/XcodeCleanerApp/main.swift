@@ -75,6 +75,8 @@ final class InventoryViewModel: ObservableObject {
 
 struct ContentView: View {
     @ObservedObject var viewModel: InventoryViewModel
+    @State private var selectedCategoryKinds: Set<StorageCategoryKind> = Set(DryRunSelection.safeCategoryDefaults.selectedCategoryKinds)
+    @State private var selectedSimulatorDeviceUDIDs: Set<String> = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -101,7 +103,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("XcodeCleaner")
                     .font(.largeTitle.bold())
-                Text("Sprint 3: Inventory + storage + runtime telemetry")
+                Text("Sprint 5: Dry-run planning + preview")
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -137,8 +139,128 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 16) {
                 runtimeTelemetryView(snapshot: snapshot)
                 storageOverviewView(snapshot: snapshot)
+                dryRunPlannerView(snapshot: snapshot)
                 installInventoryView(snapshot: snapshot)
                 simulatorInventoryView(snapshot: snapshot)
+            }
+        }
+    }
+
+    private func dryRunPlannerView(snapshot: XcodeInventorySnapshot) -> some View {
+        let selection = DryRunSelection(
+            selectedCategoryKinds: Array(selectedCategoryKinds),
+            selectedSimulatorDeviceUDIDs: Array(selectedSimulatorDeviceUDIDs)
+        )
+        let plan = DryRunPlanner.makePlan(snapshot: snapshot, selection: selection)
+
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("Dry-Run Planner")
+                .font(.headline)
+
+            Text("Estimated reclaim: \(formatBytes(plan.totalReclaimableBytes)) (\(plan.items.count) item(s))")
+                .font(.title3.weight(.semibold))
+
+            Text("Select categories")
+                .font(.subheadline.weight(.semibold))
+            ForEach(snapshot.storage.categories) { category in
+                Toggle(
+                    isOn: Binding(
+                        get: { selectedCategoryKinds.contains(category.kind) },
+                        set: { isSelected in
+                            if isSelected {
+                                selectedCategoryKinds.insert(category.kind)
+                            } else {
+                                selectedCategoryKinds.remove(category.kind)
+                            }
+                        }
+                    )
+                ) {
+                    HStack {
+                        Text(category.title)
+                        Spacer()
+                        Text(formatBytes(category.bytes))
+                            .font(.callout.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            Text("Select simulator devices")
+                .font(.subheadline.weight(.semibold))
+            if snapshot.simulator.devices.isEmpty {
+                Text("No simulator devices found in this scan.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(snapshot.simulator.devices) { device in
+                    Toggle(
+                        isOn: Binding(
+                            get: { selectedSimulatorDeviceUDIDs.contains(device.udid) },
+                            set: { isSelected in
+                                if isSelected {
+                                    selectedSimulatorDeviceUDIDs.insert(device.udid)
+                                } else {
+                                    selectedSimulatorDeviceUDIDs.remove(device.udid)
+                                }
+                            }
+                        )
+                    ) {
+                        HStack {
+                            Text(device.name)
+                            Spacer()
+                            Text(formatBytes(device.sizeInBytes))
+                                .font(.callout.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+
+            if !plan.notes.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Plan notes")
+                        .font(.subheadline.weight(.semibold))
+                    ForEach(Array(plan.notes.enumerated()), id: \.offset) { _, note in
+                        Text(note)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            Text("Planned items")
+                .font(.subheadline.weight(.semibold))
+            if plan.items.isEmpty {
+                Text("No dry-run items selected.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(plan.items) { item in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(item.title)
+                                .font(.callout.weight(.medium))
+                            Spacer()
+                            Text(formatBytes(item.reclaimableBytes))
+                                .font(.callout.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
+                        Text("Kind: \(item.kind.rawValue), Safety: \(item.safetyClassification.rawValue)")
+                            .font(.caption.monospaced())
+                            .foregroundStyle(color(for: item.safetyClassification))
+                        Text("Ownership: \(item.ownershipSummary)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if !item.paths.isEmpty {
+                            Text(item.paths.joined(separator: "\n"))
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                        }
+                    }
+                    .padding(8)
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                }
             }
         }
     }

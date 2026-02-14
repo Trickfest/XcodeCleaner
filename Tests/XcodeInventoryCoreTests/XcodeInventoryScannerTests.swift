@@ -279,6 +279,46 @@ struct XcodeInventoryScannerTests {
             .finalizingSnapshot,
         ])
     }
+
+    @Test("Dry-run planner returns exact path preview and reclaim estimate")
+    func dryRunPlannerPreviewAndTotals() {
+        let snapshot = makePlanningSnapshot()
+        let selection = DryRunSelection(
+            selectedCategoryKinds: [.derivedData, .archives],
+            selectedSimulatorDeviceUDIDs: ["SIM-1"]
+        )
+
+        let plan = DryRunPlanner.makePlan(
+            snapshot: snapshot,
+            selection: selection,
+            now: Date(timeIntervalSince1970: 500)
+        )
+
+        #expect(plan.items.count == 3)
+        #expect(plan.totalReclaimableBytes == 1_024 + 2_048 + 4_096)
+        #expect(plan.generatedAt == Date(timeIntervalSince1970: 500))
+        #expect(plan.items.contains(where: { $0.title == "Derived Data" && $0.paths == ["/tmp/DerivedData"] }))
+        #expect(plan.items.contains(where: { $0.title == "Archives" && $0.paths == ["/tmp/Archives"] }))
+        #expect(plan.items.contains(where: { $0.title.contains("Simulator Device: iPhone 15") && $0.paths == ["/tmp/CoreSimulator/Devices/SIM-1"] }))
+    }
+
+    @Test("Dry-run planner avoids simulator double counting when device and aggregate are both selected")
+    func dryRunPlannerSimulatorOverlapGuard() {
+        let snapshot = makePlanningSnapshot()
+        let selection = DryRunSelection(
+            selectedCategoryKinds: [.simulatorData],
+            selectedSimulatorDeviceUDIDs: ["SIM-1"]
+        )
+
+        let plan = DryRunPlanner.makePlan(snapshot: snapshot, selection: selection)
+
+        #expect(plan.items.count == 1)
+        #expect(plan.items[0].kind == .simulatorDevice)
+        #expect(plan.items[0].reclaimableBytes == 4_096)
+        #expect(plan.totalReclaimableBytes == 4_096)
+        #expect(plan.notes.contains(where: { $0.contains("double counting") }))
+        #expect(plan.selection.selectedCategoryKinds.isEmpty)
+    }
 }
 
 private struct StubDiscoverer: XcodeApplicationDiscovering {
@@ -398,4 +438,61 @@ private func deduplicatedPhases(_ phases: [ScanPhase]) -> [ScanPhase] {
         result.append(phase)
     }
     return result
+}
+
+private func makePlanningSnapshot() -> XcodeInventorySnapshot {
+    let categories = [
+        StorageCategoryUsage(
+            kind: .derivedData,
+            title: "Derived Data",
+            bytes: 1_024,
+            paths: ["/tmp/DerivedData"],
+            ownershipSummary: "Owned by local project build artifacts",
+            safetyClassification: .regenerable
+        ),
+        StorageCategoryUsage(
+            kind: .archives,
+            title: "Archives",
+            bytes: 2_048,
+            paths: ["/tmp/Archives"],
+            ownershipSummary: "Owned by archived local build outputs",
+            safetyClassification: .conditionallySafe
+        ),
+        StorageCategoryUsage(
+            kind: .simulatorData,
+            title: "Simulator Data",
+            bytes: 8_192,
+            paths: ["/tmp/CoreSimulator/Devices", "/tmp/CoreSimulator/Caches"],
+            ownershipSummary: "Owned by CoreSimulator runtimes and device sandboxes",
+            safetyClassification: .conditionallySafe
+        ),
+    ]
+
+    let simulator = SimulatorInventory(
+        devices: [
+            SimulatorDeviceRecord(
+                udid: "SIM-1",
+                name: "iPhone 15",
+                runtimeIdentifier: "runtime-1",
+                runtimeName: "iOS 18.0",
+                state: "Shutdown",
+                isAvailable: true,
+                dataPath: "/tmp/CoreSimulator/Devices/SIM-1",
+                sizeInBytes: 4_096,
+                runningInstanceCount: 0,
+                ownershipSummary: "Owned by simulator device data for iOS 18.0",
+                safetyClassification: .conditionallySafe
+            ),
+        ],
+        runtimes: []
+    )
+
+    return XcodeInventorySnapshot(
+        scannedAt: Date(timeIntervalSince1970: 10),
+        activeDeveloperDirectoryPath: nil,
+        installs: [],
+        storage: XcodeStorageUsage(categories: categories, totalBytes: 11_264),
+        simulator: simulator,
+        runtimeTelemetry: RuntimeTelemetry(totalXcodeRunningInstances: 0, totalSimulatorAppRunningInstances: 0)
+    )
 }

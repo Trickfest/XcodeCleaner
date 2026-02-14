@@ -29,7 +29,17 @@ struct XcodeCleanerCLIApp {
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             encoder.dateEncodingStrategy = .iso8601
 
-            let data = try encoder.encode(snapshot)
+            let data: Data
+            if options.dryRun {
+                let selection = DryRunSelection(
+                    selectedCategoryKinds: options.selectedCategoryKinds,
+                    selectedSimulatorDeviceUDIDs: options.selectedSimulatorDeviceUDIDs
+                )
+                let plan = DryRunPlanner.makePlan(snapshot: snapshot, selection: selection)
+                data = try encoder.encode(plan)
+            } else {
+                data = try encoder.encode(snapshot)
+            }
             if let output = String(data: data, encoding: .utf8) {
                 print(output)
             }
@@ -71,12 +81,19 @@ func terminalWidth(fileDescriptor: Int32, environment: [String: String]) -> Int?
 }
 
 func printUsage(toStandardError: Bool = false) {
+    let categoryValues = StorageCategoryKind.allCases.map(\.rawValue).joined(separator: ", ")
     let usage = """
-    Usage: xcodecleaner-cli [--no-progress] [--help]
+    Usage: xcodecleaner-cli [--no-progress] [--help] [--dry-run [--plan-category <kind> ...] [--plan-simulator-device <udid> ...]]
 
     Options:
-      --no-progress   Suppress progress output
-      --help          Show this help message
+      --no-progress                  Suppress progress output
+      --dry-run                      Output dry-run plan JSON instead of snapshot JSON
+      --plan-category <kind>         Include storage category in dry-run plan
+      --plan-simulator-device <udid> Include simulator device (UDID) in dry-run plan
+      --help                         Show this help message
+
+    Storage Categories:
+      \(categoryValues)
     """
     if toStandardError {
         writeToStandardError("\(usage)\n")
