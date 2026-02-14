@@ -30,13 +30,43 @@ struct XcodeCleanerCLIApp {
             encoder.dateEncodingStrategy = .iso8601
 
             let data: Data
-            if options.dryRun {
+            if options.mode == .dryRun || options.mode == .execute {
                 let selection = DryRunSelection(
                     selectedCategoryKinds: options.selectedCategoryKinds,
-                    selectedSimulatorDeviceUDIDs: options.selectedSimulatorDeviceUDIDs
+                    selectedSimulatorDeviceUDIDs: options.selectedSimulatorDeviceUDIDs,
+                    selectedXcodeInstallPaths: options.selectedXcodeInstallPaths
                 )
-                let plan = DryRunPlanner.makePlan(snapshot: snapshot, selection: selection)
-                data = try encoder.encode(plan)
+                if options.mode == .dryRun {
+                    let plan = DryRunPlanner.makePlan(snapshot: snapshot, selection: selection)
+                    data = try encoder.encode(plan)
+                } else {
+                    let plan = DryRunPlanner.makePlan(snapshot: snapshot, selection: selection)
+                    if options.skipIfToolsRunning,
+                       let skipReason = skipReasonForRunningTools(in: snapshot) {
+                        writeToStandardError("info: \(skipReason) Skipping execute due to --skip-if-tools-running.\n")
+                        let report = CleanupExecutionReport(
+                            executedAt: Date(),
+                            allowDirectDelete: options.allowDirectDelete,
+                            skippedReason: skipReason,
+                            selection: plan.selection,
+                            plan: plan,
+                            results: [],
+                            totalReclaimedBytes: 0,
+                            succeededCount: 0,
+                            partiallySucceededCount: 0,
+                            blockedCount: 0,
+                            failedCount: 0
+                        )
+                        data = try encoder.encode(report)
+                    } else {
+                        let report = CleanupExecutor().execute(
+                            snapshot: snapshot,
+                            plan: plan,
+                            allowDirectDelete: options.allowDirectDelete
+                        )
+                        data = try encoder.encode(report)
+                    }
+                }
             } else {
                 data = try encoder.encode(snapshot)
             }
@@ -83,13 +113,17 @@ func terminalWidth(fileDescriptor: Int32, environment: [String: String]) -> Int?
 func printUsage(toStandardError: Bool = false) {
     let categoryValues = StorageCategoryKind.allCases.map(\.rawValue).joined(separator: ", ")
     let usage = """
-    Usage: xcodecleaner-cli [--no-progress] [--help] [--dry-run [--plan-category <kind> ...] [--plan-simulator-device <udid> ...]]
+    Usage: xcodecleaner-cli [--no-progress] [--help] [--dry-run|--execute [--allow-direct-delete] [--skip-if-tools-running] [--plan-category <kind> ...] [--plan-simulator-device <udid> ...] [--plan-xcode-install <path> ...]]
 
     Options:
       --no-progress                  Suppress progress output
       --dry-run                      Output dry-run plan JSON instead of snapshot JSON
+      --execute                      Execute selected plan and output execution report JSON
+      --allow-direct-delete          Allow direct delete fallback when move-to-trash fails (execute mode only)
+      --skip-if-tools-running        Skip execute when Xcode or Simulator is currently running
       --plan-category <kind>         Include storage category in dry-run plan
       --plan-simulator-device <udid> Include simulator device (UDID) in dry-run plan
+      --plan-xcode-install <path>    Include specific Xcode app bundle path in plan
       --help                         Show this help message
 
     Storage Categories:
@@ -100,4 +134,19 @@ func printUsage(toStandardError: Bool = false) {
     } else {
         print(usage)
     }
+}
+
+private func skipReasonForRunningTools(in snapshot: XcodeInventorySnapshot) -> String? {
+    let runningXcodeCount = snapshot.runtimeTelemetry.totalXcodeRunningInstances
+    let runningSimulatorAppCount = snapshot.runtimeTelemetry.totalSimulatorAppRunningInstances
+    let bootedDeviceCount = snapshot.simulator.devices.filter { device in
+        let state = device.state.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return device.runningInstanceCount > 0 || state == "booted" || state == "booting"
+    }.count
+
+    guard runningXcodeCount > 0 || runningSimulatorAppCount > 0 || bootedDeviceCount > 0 else {
+        return nil
+    }
+
+    return "Detected running tools (Xcode instances: \(runningXcodeCount), Simulator app instances: \(runningSimulatorAppCount), booted simulator devices: \(bootedDeviceCount))."
 }

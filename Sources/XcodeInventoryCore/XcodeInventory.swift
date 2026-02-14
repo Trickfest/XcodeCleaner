@@ -257,29 +257,38 @@ public struct XcodeInventorySnapshot: Codable, Equatable, Sendable {
 public struct DryRunSelection: Codable, Equatable, Sendable {
     public let selectedCategoryKinds: [StorageCategoryKind]
     public let selectedSimulatorDeviceUDIDs: [String]
+    public let selectedXcodeInstallPaths: [String]
 
-    public init(selectedCategoryKinds: [StorageCategoryKind], selectedSimulatorDeviceUDIDs: [String]) {
+    public init(
+        selectedCategoryKinds: [StorageCategoryKind],
+        selectedSimulatorDeviceUDIDs: [String],
+        selectedXcodeInstallPaths: [String] = []
+    ) {
         self.selectedCategoryKinds = Array(Set(selectedCategoryKinds)).sorted {
             $0.rawValue < $1.rawValue
         }
         self.selectedSimulatorDeviceUDIDs = Array(Set(selectedSimulatorDeviceUDIDs)).sorted()
+        self.selectedXcodeInstallPaths = Array(Set(selectedXcodeInstallPaths)).sorted()
     }
 
     public static let safeCategoryDefaults = DryRunSelection(
         selectedCategoryKinds: [.derivedData, .archives, .deviceSupport],
-        selectedSimulatorDeviceUDIDs: []
+        selectedSimulatorDeviceUDIDs: [],
+        selectedXcodeInstallPaths: []
     )
 }
 
 public enum DryRunItemKind: String, Codable, Sendable {
     case storageCategory
     case simulatorDevice
+    case xcodeInstall
 }
 
 public struct DryRunPlanItem: Codable, Equatable, Identifiable, Sendable {
     public var id: String { "\(kind.rawValue):\(title)" }
 
     public let kind: DryRunItemKind
+    public let storageCategoryKind: StorageCategoryKind?
     public let title: String
     public let reclaimableBytes: Int64
     public let paths: [String]
@@ -288,6 +297,7 @@ public struct DryRunPlanItem: Codable, Equatable, Identifiable, Sendable {
 
     public init(
         kind: DryRunItemKind,
+        storageCategoryKind: StorageCategoryKind? = nil,
         title: String,
         reclaimableBytes: Int64,
         paths: [String],
@@ -295,6 +305,7 @@ public struct DryRunPlanItem: Codable, Equatable, Identifiable, Sendable {
         safetyClassification: SafetyClassification
     ) {
         self.kind = kind
+        self.storageCategoryKind = storageCategoryKind
         self.title = title
         self.reclaimableBytes = reclaimableBytes
         self.paths = paths
@@ -322,5 +333,120 @@ public struct DryRunPlan: Codable, Equatable, Sendable {
         self.items = items
         self.totalReclaimableBytes = totalReclaimableBytes
         self.notes = notes
+    }
+}
+
+public enum CleanupActionStatus: String, Codable, Sendable {
+    case succeeded
+    case partiallySucceeded
+    case blocked
+    case failed
+}
+
+public enum CleanupOperation: String, Codable, Sendable {
+    case moveToTrash
+    case directDelete
+    case mixed
+    case none
+}
+
+public enum CleanupPathStatus: String, Codable, Sendable {
+    case succeeded
+    case blocked
+    case failed
+    case skippedMissing
+}
+
+public struct CleanupPathResult: Codable, Equatable, Identifiable, Sendable {
+    public var id: String { path }
+
+    public let path: String
+    public let status: CleanupPathStatus
+    public let operation: CleanupOperation
+    public let reclaimedBytes: Int64
+    public let message: String
+
+    public init(
+        path: String,
+        status: CleanupPathStatus,
+        operation: CleanupOperation,
+        reclaimedBytes: Int64,
+        message: String
+    ) {
+        self.path = path
+        self.status = status
+        self.operation = operation
+        self.reclaimedBytes = reclaimedBytes
+        self.message = message
+    }
+}
+
+public struct CleanupActionResult: Codable, Equatable, Identifiable, Sendable {
+    public var id: String { item.id }
+
+    public let item: DryRunPlanItem
+    public let status: CleanupActionStatus
+    public let operation: CleanupOperation
+    public let reclaimedBytes: Int64
+    public let message: String
+    public let pathResults: [CleanupPathResult]
+    public let recordedAt: Date
+
+    public init(
+        item: DryRunPlanItem,
+        status: CleanupActionStatus,
+        operation: CleanupOperation,
+        reclaimedBytes: Int64,
+        message: String,
+        pathResults: [CleanupPathResult],
+        recordedAt: Date
+    ) {
+        self.item = item
+        self.status = status
+        self.operation = operation
+        self.reclaimedBytes = reclaimedBytes
+        self.message = message
+        self.pathResults = pathResults
+        self.recordedAt = recordedAt
+    }
+}
+
+public struct CleanupExecutionReport: Codable, Equatable, Sendable {
+    public let executedAt: Date
+    public let allowDirectDelete: Bool
+    public let skippedReason: String?
+    public let selection: DryRunSelection
+    public let plan: DryRunPlan
+    public let results: [CleanupActionResult]
+    public let totalReclaimedBytes: Int64
+    public let succeededCount: Int
+    public let partiallySucceededCount: Int
+    public let blockedCount: Int
+    public let failedCount: Int
+
+    public init(
+        executedAt: Date,
+        allowDirectDelete: Bool,
+        skippedReason: String? = nil,
+        selection: DryRunSelection,
+        plan: DryRunPlan,
+        results: [CleanupActionResult],
+        totalReclaimedBytes: Int64,
+        succeededCount: Int,
+        partiallySucceededCount: Int,
+        blockedCount: Int,
+        failedCount: Int
+    ) {
+        self.executedAt = executedAt
+        self.allowDirectDelete = allowDirectDelete
+        self.skippedReason = skippedReason
+        self.selection = selection
+        self.plan = plan
+        self.results = results
+        self.totalReclaimedBytes = totalReclaimedBytes
+        self.succeededCount = succeededCount
+        self.partiallySucceededCount = partiallySucceededCount
+        self.blockedCount = blockedCount
+        self.failedCount = failedCount
     }
 }

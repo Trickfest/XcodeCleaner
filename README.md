@@ -4,7 +4,7 @@ Native macOS tooling (Swift + SwiftUI) to inventory, understand, and clean Xcode
 
 ## Sprint Status
 
-Implemented through Sprint 5:
+Implemented through Sprint 6:
 - Read-only Xcode installation inventory scanner.
 - Active developer directory detection (`xcode-select -p`).
 - Read-only storage accounting for:
@@ -29,11 +29,18 @@ Implemented through Sprint 5:
 - Shared dry-run planner with deterministic item ordering and reclaim estimates.
 - Exact path previews for each dry-run item.
 - Selective simulator-device planning by UDID.
-- GUI dry-run section with category/device selection and live plan preview.
-- CLI dry-run output mode via `--dry-run`, with `--plan-category` and `--plan-simulator-device`.
+- Selective per-install Xcode planning by install path.
+- GUI dry-run section with category/device/Xcode-install selection and live plan preview.
+- CLI dry-run output mode via `--dry-run`, with `--plan-category`, `--plan-simulator-device`, and `--plan-xcode-install`.
+- Safe execution:
+- Shared cleanup execution engine with per-item action log records.
+- Move-to-trash first with optional direct-delete fallback.
+- Guardrails for active/running Xcode installs and booted/running simulator devices.
+- GUI execute flow with per-item success/blocked/failed feedback.
+- CLI execute mode via `--execute` with machine-readable execution report JSON.
 - SwiftUI app shell showing inventory and storage totals.
 - CLI JSON output with inventory and storage models.
-- Unit tests for multi-Xcode discovery, storage categorization, telemetry, simulator itemization, progress phase ordering, and dry-run planning.
+- Unit tests for multi-Xcode discovery, storage categorization, telemetry, simulator itemization, progress phase ordering, dry-run planning, and cleanup execution guardrails.
 
 ## Quick Start
 

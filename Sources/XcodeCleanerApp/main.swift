@@ -23,12 +23,20 @@ final class InventoryViewModel: ObservableObject {
     @Published private(set) var scanProgressFraction: Double = 0
     @Published private(set) var scanPhaseTitle = "Idle"
     @Published private(set) var scanMessage = "Ready"
+    @Published private(set) var isExecuting = false
+    @Published private(set) var lastExecutionReport: CleanupExecutionReport?
+    @Published private(set) var executionStatusMessage = "No cleanup executed yet."
 
     private let scanner: XcodeInventoryScanner
+    private let cleanupExecutor: CleanupExecutor
     private var activeScanID = UUID()
 
-    init(scanner: XcodeInventoryScanner = XcodeInventoryScanner()) {
+    init(
+        scanner: XcodeInventoryScanner = XcodeInventoryScanner(),
+        cleanupExecutor: CleanupExecutor = CleanupExecutor()
+    ) {
         self.scanner = scanner
+        self.cleanupExecutor = cleanupExecutor
     }
 
     func loadIfNeeded() {
@@ -71,12 +79,46 @@ final class InventoryViewModel: ObservableObject {
             }
         }
     }
+
+    func execute(selection: DryRunSelection, allowDirectDelete: Bool) {
+        guard let snapshot else {
+            executionStatusMessage = "No scan snapshot available for cleanup execution."
+            return
+        }
+        guard !isExecuting else {
+            return
+        }
+
+        isExecuting = true
+        executionStatusMessage = "Executing cleanup plan..."
+        let executor = cleanupExecutor
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let report = executor.execute(
+                snapshot: snapshot,
+                selection: selection,
+                allowDirectDelete: allowDirectDelete
+            )
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self else {
+                    return
+                }
+                self.lastExecutionReport = report
+                self.executionStatusMessage = "Cleanup complete. Reclaimed \(ByteCountFormatter.string(fromByteCount: report.totalReclaimedBytes, countStyle: .file))."
+                self.isExecuting = false
+                self.reload()
+            }
+        }
+    }
 }
 
 struct ContentView: View {
     @ObservedObject var viewModel: InventoryViewModel
     @State private var selectedCategoryKinds: Set<StorageCategoryKind> = Set(DryRunSelection.safeCategoryDefaults.selectedCategoryKinds)
     @State private var selectedSimulatorDeviceUDIDs: Set<String> = []
+    @State private var selectedXcodeInstallPaths: Set<String> = []
+    @State private var allowDirectDeleteFallback = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -103,7 +145,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("XcodeCleaner")
                     .font(.largeTitle.bold())
-                Text("Sprint 5: Dry-run planning + preview")
+                Text("Sprint 6: Safe execution + selective uninstall/delete")
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -149,7 +191,8 @@ struct ContentView: View {
     private func dryRunPlannerView(snapshot: XcodeInventorySnapshot) -> some View {
         let selection = DryRunSelection(
             selectedCategoryKinds: Array(selectedCategoryKinds),
-            selectedSimulatorDeviceUDIDs: Array(selectedSimulatorDeviceUDIDs)
+            selectedSimulatorDeviceUDIDs: Array(selectedSimulatorDeviceUDIDs),
+            selectedXcodeInstallPaths: Array(selectedXcodeInstallPaths)
         )
         let plan = DryRunPlanner.makePlan(snapshot: snapshot, selection: selection)
 
@@ -216,6 +259,47 @@ struct ContentView: View {
                 }
             }
 
+            Text("Select Xcode installs for uninstall")
+                .font(.subheadline.weight(.semibold))
+            if snapshot.installs.isEmpty {
+                Text("No Xcode installs found in this scan.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(snapshot.installs) { install in
+                    Toggle(
+                        isOn: Binding(
+                            get: { selectedXcodeInstallPaths.contains(install.path) },
+                            set: { isSelected in
+                                if isSelected {
+                                    selectedXcodeInstallPaths.insert(install.path)
+                                } else {
+                                    selectedXcodeInstallPaths.remove(install.path)
+                                }
+                            }
+                        )
+                    ) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(install.displayName)
+                                Text("Version: \(install.version ?? "Unknown"), Build: \(install.build ?? "Unknown")")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Text(install.path)
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                                    .textSelection(.enabled)
+                            }
+                            Spacer()
+                            Text(formatBytes(install.sizeInBytes))
+                                .font(.callout.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+
             if !plan.notes.isEmpty {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Plan notes")
@@ -245,7 +329,7 @@ struct ContentView: View {
                                 .font(.callout.monospacedDigit())
                                 .foregroundStyle(.secondary)
                         }
-                        Text("Kind: \(item.kind.rawValue), Safety: \(item.safetyClassification.rawValue)")
+                        Text("Kind: \(item.kind.rawValue), Safety: \(item.safetyClassification.rawValue)\(item.storageCategoryKind.map { ", Category: \($0.rawValue)" } ?? "")")
                             .font(.caption.monospaced())
                             .foregroundStyle(color(for: item.safetyClassification))
                         Text("Ownership: \(item.ownershipSummary)")
@@ -261,6 +345,33 @@ struct ContentView: View {
                     .padding(8)
                     .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
                 }
+            }
+
+            Divider()
+            Toggle("Allow direct delete fallback when move-to-trash fails", isOn: $allowDirectDeleteFallback)
+                .font(.callout)
+
+            HStack(spacing: 10) {
+                Button("Execute Cleanup") {
+                    viewModel.execute(selection: selection, allowDirectDelete: allowDirectDeleteFallback)
+                }
+                .disabled(plan.items.isEmpty || viewModel.isExecuting || viewModel.isLoading)
+
+                if viewModel.isExecuting {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Executing...")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(viewModel.executionStatusMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if let report = viewModel.lastExecutionReport {
+                executionReportView(report)
             }
         }
     }
@@ -467,6 +578,47 @@ struct ContentView: View {
         }
     }
 
+    private func executionReportView(_ report: CleanupExecutionReport) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Last Cleanup Execution")
+                .font(.headline)
+            Text(
+                "Reclaimed: \(formatBytes(report.totalReclaimedBytes)) | Succeeded: \(report.succeededCount) | Partial: \(report.partiallySucceededCount) | Blocked: \(report.blockedCount) | Failed: \(report.failedCount)"
+            )
+            .font(.callout.monospacedDigit())
+            .foregroundStyle(.secondary)
+
+            ForEach(report.results) { result in
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(result.item.title)
+                            .font(.callout.weight(.medium))
+                        Spacer()
+                        Text(result.status.rawValue)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(color(for: result.status))
+                        Text(formatBytes(result.reclaimedBytes))
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Text(result.message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    ForEach(result.pathResults) { pathResult in
+                        Text("\(pathResult.status.rawValue): \(pathResult.path) (\(pathResult.operation.rawValue), \(formatBytes(pathResult.reclaimedBytes)))")
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                }
+                .padding(8)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+            }
+        }
+    }
+
     private func color(for safetyClassification: SafetyClassification) -> Color {
         switch safetyClassification {
         case .regenerable:
@@ -474,6 +626,19 @@ struct ContentView: View {
         case .conditionallySafe:
             return .orange
         case .destructive:
+            return .red
+        }
+    }
+
+    private func color(for status: CleanupActionStatus) -> Color {
+        switch status {
+        case .succeeded:
+            return .green
+        case .partiallySucceeded:
+            return .orange
+        case .blocked:
+            return .yellow
+        case .failed:
             return .red
         }
     }

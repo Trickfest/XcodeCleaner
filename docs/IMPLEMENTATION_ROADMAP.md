@@ -45,4 +45,4 @@ Each sprint must leave users with at least one new outcome they can realize imme
 - Better predictability.
 
 ## Immediate Next Action
-Sprint 5 is complete; next sprint is Sprint 6 for safe execution (move-to-Trash first, guarded delete fallback), selective simulator-device deletion, and selective per-install Xcode uninstall.
+Sprint 6 is complete; next sprint is Sprint 7 for active Xcode switching and stale runtime/device-support management.

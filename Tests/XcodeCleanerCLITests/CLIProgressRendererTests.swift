@@ -9,6 +9,7 @@ struct CLIProgressRendererTests {
         let options = try CLIOptions.parse(arguments: ["--no-progress", "--help"])
         #expect(options.suppressProgress == true)
         #expect(options.showHelp == true)
+        #expect(options.mode == .snapshot)
     }
 
     @Test("CLI options parse dry-run with categories and simulator selections")
@@ -19,25 +20,67 @@ struct CLIProgressRendererTests {
             "--plan-category=deviceSupport",
             "--plan-simulator-device", "AAA-BBB",
             "--plan-simulator-device=CCC-DDD",
+            "--plan-xcode-install", "/Applications/Xcode-beta.app",
+            "--plan-xcode-install=/Applications/Xcode-old.app",
         ])
 
-        #expect(options.dryRun == true)
+        #expect(options.mode == .dryRun)
         #expect(options.selectedCategoryKinds == [.derivedData, .deviceSupport])
         #expect(options.selectedSimulatorDeviceUDIDs == ["AAA-BBB", "CCC-DDD"])
+        #expect(options.selectedXcodeInstallPaths == ["/Applications/Xcode-beta.app", "/Applications/Xcode-old.app"])
     }
 
     @Test("Dry-run defaults to safe categories when no explicit selections")
     func parseDryRunDefaults() throws {
         let options = try CLIOptions.parse(arguments: ["--dry-run"])
-        #expect(options.dryRun == true)
+        #expect(options.mode == .dryRun)
         #expect(Set(options.selectedCategoryKinds) == Set(DryRunSelection.safeCategoryDefaults.selectedCategoryKinds))
         #expect(options.selectedSimulatorDeviceUDIDs.isEmpty)
+        #expect(options.selectedXcodeInstallPaths.isEmpty)
     }
 
-    @Test("Plan selectors require dry-run mode")
-    func parseSelectorsRequireDryRun() {
-        #expect(throws: CLIOptionsError.requiresDryRun) {
+    @Test("Plan selectors require dry-run or execute mode")
+    func parseSelectorsRequirePlanningMode() {
+        #expect(throws: CLIOptionsError.requiresPlanningMode) {
             try CLIOptions.parse(arguments: ["--plan-category", "derivedData"])
+        }
+    }
+
+    @Test("CLI options parse execute mode with direct delete")
+    func parseExecuteOptions() throws {
+        let options = try CLIOptions.parse(arguments: [
+            "--execute",
+            "--allow-direct-delete",
+            "--skip-if-tools-running",
+            "--plan-simulator-device", "AAA-BBB",
+            "--plan-xcode-install", "/Applications/Xcode-16.0.app",
+        ])
+
+        #expect(options.mode == .execute)
+        #expect(options.allowDirectDelete == true)
+        #expect(options.skipIfToolsRunning == true)
+        #expect(options.selectedSimulatorDeviceUDIDs == ["AAA-BBB"])
+        #expect(options.selectedXcodeInstallPaths == ["/Applications/Xcode-16.0.app"])
+    }
+
+    @Test("CLI options reject conflicting dry-run and execute flags")
+    func parseConflictingModes() {
+        #expect(throws: CLIOptionsError.conflictingModes) {
+            try CLIOptions.parse(arguments: ["--dry-run", "--execute"])
+        }
+    }
+
+    @Test("allow-direct-delete requires execute mode")
+    func parseAllowDirectDeleteRequiresExecute() {
+        #expect(throws: CLIOptionsError.requiresExecute("--allow-direct-delete")) {
+            try CLIOptions.parse(arguments: ["--allow-direct-delete"])
+        }
+    }
+
+    @Test("skip-if-tools-running requires execute mode")
+    func parseSkipIfToolsRunningRequiresExecute() {
+        #expect(throws: CLIOptionsError.requiresExecute("--skip-if-tools-running")) {
+            try CLIOptions.parse(arguments: ["--skip-if-tools-running"])
         }
     }
 

@@ -9,12 +9,17 @@ public enum DryRunPlanner {
         var notes: [String] = []
         var selectedKinds = Set(selection.selectedCategoryKinds)
         let selectedDeviceUDIDs = Set(selection.selectedSimulatorDeviceUDIDs)
+        let selectedInstallPaths = Set(selection.selectedXcodeInstallPaths.map(normalize(path:)))
 
         // Prevent inaccurate double counting when users select both aggregate simulator data
         // and specific simulator devices in one plan.
         if selectedKinds.contains(.simulatorData), !selectedDeviceUDIDs.isEmpty {
             selectedKinds.remove(.simulatorData)
             notes.append("Removed aggregate Simulator Data category to avoid double counting with selected simulator devices.")
+        }
+        if selectedKinds.contains(.xcodeApplications), !selectedInstallPaths.isEmpty {
+            selectedKinds.remove(.xcodeApplications)
+            notes.append("Removed aggregate Xcode Applications category to avoid double counting with selected Xcode installs.")
         }
 
         var items: [DryRunPlanItem] = []
@@ -27,6 +32,7 @@ public enum DryRunPlanner {
             items.append(
                 DryRunPlanItem(
                     kind: .storageCategory,
+                    storageCategoryKind: category.kind,
                     title: category.title,
                     reclaimableBytes: category.bytes,
                     paths: category.paths,
@@ -55,6 +61,27 @@ public enum DryRunPlanner {
             )
         }
 
+        let installsByPath = Dictionary(uniqueKeysWithValues: snapshot.installs.map { (normalize(path: $0.path), $0) })
+        for selectedPath in selectedInstallPaths.sorted() {
+            guard let install = installsByPath[selectedPath] else {
+                notes.append("Selected Xcode install \(selectedPath) was not found in the current scan snapshot.")
+                continue
+            }
+
+            let versionPart = install.version.map { " \($0)" } ?? ""
+            let buildPart = install.build.map { " (\($0))" } ?? ""
+            items.append(
+                DryRunPlanItem(
+                    kind: .xcodeInstall,
+                    title: "Xcode Install: \(install.displayName)\(versionPart)\(buildPart)",
+                    reclaimableBytes: install.sizeInBytes,
+                    paths: [install.path],
+                    ownershipSummary: install.ownershipSummary,
+                    safetyClassification: install.safetyClassification
+                )
+            )
+        }
+
         items.sort { lhs, rhs in
             if lhs.reclaimableBytes != rhs.reclaimableBytes {
                 return lhs.reclaimableBytes > rhs.reclaimableBytes
@@ -77,11 +104,16 @@ public enum DryRunPlanner {
             generatedAt: now,
             selection: DryRunSelection(
                 selectedCategoryKinds: Array(selectedKinds).sorted { $0.rawValue < $1.rawValue },
-                selectedSimulatorDeviceUDIDs: selection.selectedSimulatorDeviceUDIDs
+                selectedSimulatorDeviceUDIDs: selection.selectedSimulatorDeviceUDIDs,
+                selectedXcodeInstallPaths: Array(selectedInstallPaths)
             ),
             items: items,
             totalReclaimableBytes: totalReclaimableBytes,
             notes: notes
         )
+    }
+
+    private static func normalize(path: String) -> String {
+        URL(filePath: path).standardizedFileURL.resolvingSymlinksInPath().path
     }
 }
