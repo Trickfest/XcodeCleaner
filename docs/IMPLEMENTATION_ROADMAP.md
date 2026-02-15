@@ -21,12 +21,13 @@
 | 7 | V1 | Modification tools: switch active Xcode and manage stale runtimes/device support | `xcode-select` switch validated in integration tests; runtime guardrails enforced | Users can actively tune local Xcode environment, not just clean files |
 | 8 | V1 | Automation policies (age/size/category) with "only when Xcode/simulator closed" checks | Scheduled/manual runs validated; guard conditions tested | Ongoing disk hygiene without manual effort |
 | 9 | V1 GA | History/trends, JSON+CSV report export, signed/notarized release package | Release smoke suite passes; notarized artifact installs cleanly on fresh Mac | Shippable V1 with clear user value and low install friction |
-| 10 | V2 | Recommendation engine with explainable ranking | Recommendation outputs stable on fixture scenarios; rationale shown in UI | Faster decision-making for cleanup opportunities |
-| 11 | V2 | Policy import/export for teams + simulation mode | Round-trip policy tests pass; simulation and live results aligned | Team consistency and repeatable workstation standards |
-| 12 | V2 GA | Multi-step automation workflows + threshold alerts | Workflow tests pass with fail/retry paths; alert threshold logic verified | Proactive maintenance and reduced disk incidents |
-| 13 | V3 | Predictive disk growth forecasting (Xcode footprint) | Forecast evaluation suite meets agreed error target on fixtures | Users can prevent storage crises before they happen |
-| 14 | V3 | Optional adjacent toolchain storage modules + recovery assistant | Opt-in boundaries tested; recovery flow validated in destructive-action simulation | Broader workspace optimization with safer operations |
-| 15 | V3 GA | Enterprise policy signing/compliance reporting + hardening pass | Signature verification tests fail closed; full regression suite green | Enterprise-ready governance and trust posture |
+| 10 | V1 | UI cleanup and workflow organization pass | Core user flows are reorganized and usability smoke checks pass without feature regressions | Users can find cleanup, automation, and modification actions faster |
+| 11 | V2 | Recommendation engine with explainable ranking | Recommendation outputs stable on fixture scenarios; rationale shown in UI | Faster decision-making for cleanup opportunities |
+| 12 | V2 | Policy import/export for teams + simulation mode | Round-trip policy tests pass; simulation and live results aligned | Team consistency and repeatable workstation standards |
+| 13 | V2 GA | Multi-step automation workflows + threshold alerts | Workflow tests pass with fail/retry paths; alert threshold logic verified | Proactive maintenance and reduced disk incidents |
+| 14 | V3 | Predictive disk growth forecasting (Xcode footprint) | Forecast evaluation suite meets agreed error target on fixtures | Users can prevent storage crises before they happen |
+| 15 | V3 | Optional adjacent toolchain storage modules + recovery assistant | Opt-in boundaries tested; recovery flow validated in destructive-action simulation | Broader workspace optimization with safer operations |
+| 16 | V3 GA | Enterprise policy signing/compliance reporting + hardening pass | Signature verification tests fail closed; full regression suite green | Enterprise-ready governance and trust posture |
 
 ## Quality Gates (Apply Every Sprint)
 - New code paths require unit tests.
@@ -45,4 +46,4 @@ Each sprint must leave users with at least one new outcome they can realize imme
 - Better predictability.
 
 ## Immediate Next Action
-Sprint 7 is complete; next sprint is Sprint 8 for automation policies with scheduled/manual runs and "only when Xcode/simulator closed" checks.
+Sprint 8 automation implementation is now in progress/validation; once accepted, move to Sprint 9 for history/trends, report export, and release packaging.

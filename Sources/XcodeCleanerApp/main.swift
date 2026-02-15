@@ -29,23 +29,34 @@ final class InventoryViewModel: ObservableObject {
     @Published private(set) var staleArtifactReport: StaleArtifactReport?
     @Published private(set) var lastXcodeSwitchResult: ActiveXcodeSwitchResult?
     @Published private(set) var switchStatusMessage = "No active-Xcode switch executed yet."
+    @Published private(set) var automationPolicies: [AutomationPolicy] = []
+    @Published private(set) var automationRunHistory: [AutomationPolicyRunRecord] = []
+    @Published private(set) var automationStatusMessage = "No automation runs yet."
 
     private let scanner: XcodeInventoryScanner
     private let cleanupExecutor: CleanupExecutor
     private let staleArtifactDetector: StaleArtifactDetector
     private let activeXcodeSwitcher: ActiveXcodeSwitcher
+    private let automationStore: any AutomationPolicyStoring
+    private let automationRunner: AutomationPolicyRunner
     private var activeScanID = UUID()
 
     init(
         scanner: XcodeInventoryScanner = XcodeInventoryScanner(),
         cleanupExecutor: CleanupExecutor = CleanupExecutor(),
         staleArtifactDetector: StaleArtifactDetector = StaleArtifactDetector(),
-        activeXcodeSwitcher: ActiveXcodeSwitcher = ActiveXcodeSwitcher()
+        activeXcodeSwitcher: ActiveXcodeSwitcher = ActiveXcodeSwitcher(),
+        automationStore: any AutomationPolicyStoring = JSONAutomationPolicyStore(
+            stateDirectoryURL: defaultAutomationStateDirectory()
+        ),
+        automationRunner: AutomationPolicyRunner = AutomationPolicyRunner()
     ) {
         self.scanner = scanner
         self.cleanupExecutor = cleanupExecutor
         self.staleArtifactDetector = staleArtifactDetector
         self.activeXcodeSwitcher = activeXcodeSwitcher
+        self.automationStore = automationStore
+        self.automationRunner = automationRunner
     }
 
     func loadIfNeeded() {
@@ -85,8 +96,24 @@ final class InventoryViewModel: ObservableObject {
                 self.scanProgressFraction = 1
                 self.scanPhaseTitle = ScanPhase.finalizingSnapshot.title
                 self.scanMessage = "Scan complete"
+                self.loadAutomationState()
                 self.isLoading = false
             }
+        }
+    }
+
+    func loadAutomationState() {
+        do {
+            let policies = try automationStore.loadPolicies()
+            automationPolicies = policies.sorted { lhs, rhs in
+                if lhs.updatedAt != rhs.updatedAt {
+                    return lhs.updatedAt > rhs.updatedAt
+                }
+                return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+            }
+            automationRunHistory = Array(try automationStore.loadRunHistory().prefix(20))
+        } catch {
+            automationStatusMessage = "Failed to load automation state: \(error.localizedDescription)"
         }
     }
 
@@ -190,6 +217,231 @@ final class InventoryViewModel: ObservableObject {
             }
         }
     }
+
+    func createAutomationPolicy(
+        name: String,
+        categoryKinds: [StorageCategoryKind],
+        everyHours: Int?,
+        minAgeDays: Int?,
+        minTotalReclaimBytes: Int64?,
+        skipIfToolsRunning: Bool,
+        allowDirectDelete: Bool
+    ) {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else {
+            automationStatusMessage = "Automation policy name is required."
+            return
+        }
+        if let everyHours, everyHours <= 0 {
+            automationStatusMessage = "Automation schedule must be greater than zero hours."
+            return
+        }
+        if let minAgeDays, minAgeDays <= 0 {
+            automationStatusMessage = "Minimum age must be greater than zero days."
+            return
+        }
+        if let minTotalReclaimBytes, minTotalReclaimBytes < 0 {
+            automationStatusMessage = "Minimum reclaim bytes cannot be negative."
+            return
+        }
+
+        do {
+            var policies = try automationStore.loadPolicies()
+            let now = Date()
+            let categories = categoryKinds.isEmpty
+                ? DryRunSelection.safeCategoryDefaults.selectedCategoryKinds
+                : categoryKinds
+            let policy = AutomationPolicy(
+                name: trimmedName,
+                schedule: everyHours.map { .everyHours($0) } ?? .manualOnly,
+                selection: DryRunSelection(
+                    selectedCategoryKinds: categories,
+                    selectedSimulatorDeviceUDIDs: [],
+                    selectedXcodeInstallPaths: []
+                ),
+                minAgeDays: minAgeDays,
+                minTotalReclaimBytes: minTotalReclaimBytes,
+                skipIfToolsRunning: skipIfToolsRunning,
+                allowDirectDelete: allowDirectDelete,
+                createdAt: now,
+                updatedAt: now
+            )
+            policies.append(policy)
+            try automationStore.savePolicies(policies)
+            automationStatusMessage = "Created automation policy '\(policy.name)'."
+            loadAutomationState()
+        } catch {
+            automationStatusMessage = "Failed to create automation policy: \(error.localizedDescription)"
+        }
+    }
+
+    func setAutomationPolicyEnabled(policyID: String, isEnabled: Bool) {
+        do {
+            var policies = try automationStore.loadPolicies()
+            guard let index = policies.firstIndex(where: { $0.id == policyID }) else {
+                automationStatusMessage = "Automation policy not found."
+                return
+            }
+            policies[index].isEnabled = isEnabled
+            policies[index].updatedAt = Date()
+            try automationStore.savePolicies(policies)
+            automationStatusMessage = isEnabled
+                ? "Enabled automation policy '\(policies[index].name)'."
+                : "Disabled automation policy '\(policies[index].name)'."
+            loadAutomationState()
+        } catch {
+            automationStatusMessage = "Failed to update automation policy: \(error.localizedDescription)"
+        }
+    }
+
+    func deleteAutomationPolicy(policyID: String) {
+        do {
+            var policies = try automationStore.loadPolicies()
+            guard let index = policies.firstIndex(where: { $0.id == policyID }) else {
+                automationStatusMessage = "Automation policy not found."
+                return
+            }
+            let name = policies[index].name
+            policies.remove(at: index)
+            try automationStore.savePolicies(policies)
+            automationStatusMessage = "Deleted automation policy '\(name)'."
+            loadAutomationState()
+        } catch {
+            automationStatusMessage = "Failed to delete automation policy: \(error.localizedDescription)"
+        }
+    }
+
+    func runAutomationPolicyNow(policyID: String) {
+        guard !isExecuting else {
+            return
+        }
+
+        guard let currentSnapshot = snapshot else {
+            automationStatusMessage = "No scan snapshot available. Refresh and try again."
+            return
+        }
+        let policy: AutomationPolicy
+        do {
+            let policies = try automationStore.loadPolicies()
+            guard let matched = policies.first(where: { $0.id == policyID }) else {
+                automationStatusMessage = "Automation policy not found."
+                return
+            }
+            policy = matched
+        } catch {
+            automationStatusMessage = "Failed to load automation policies: \(error.localizedDescription)"
+            return
+        }
+
+        isExecuting = true
+        automationStatusMessage = "Running automation policy..."
+        let runner = automationRunner
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let record = runner.run(
+                policy: policy,
+                snapshot: currentSnapshot,
+                trigger: .manual
+            )
+
+            DispatchQueue.main.async {
+                guard let self else {
+                    return
+                }
+                do {
+                    var policies = try self.automationStore.loadPolicies()
+                    try self.automationStore.appendRunHistory(record)
+                    if record.status == .executed,
+                       let index = policies.firstIndex(where: { $0.id == record.policyID }) {
+                        policies[index].lastSuccessfulRunAt = record.finishedAt
+                        policies[index].updatedAt = record.finishedAt
+                        try self.automationStore.savePolicies(policies)
+                    }
+                    self.automationStatusMessage = record.message
+                    if let report = record.executionReport {
+                        self.lastExecutionReport = report
+                        self.executionStatusMessage = "Automation run complete. Reclaimed \(ByteCountFormatter.string(fromByteCount: report.totalReclaimedBytes, countStyle: .file))."
+                    }
+                    self.loadAutomationState()
+                    self.reload()
+                } catch {
+                    self.automationStatusMessage = "Automation run failed: \(error.localizedDescription)"
+                }
+                self.isExecuting = false
+            }
+        }
+    }
+
+    func runDueAutomationPoliciesNow() {
+        guard !isExecuting else {
+            return
+        }
+        guard let currentSnapshot = snapshot else {
+            automationStatusMessage = "No scan snapshot available. Refresh and try again."
+            return
+        }
+        let duePolicies: [AutomationPolicy]
+        do {
+            duePolicies = AutomationPolicies.duePolicies(
+                from: try automationStore.loadPolicies(),
+                now: Date()
+            )
+        } catch {
+            automationStatusMessage = "Failed to load automation policies: \(error.localizedDescription)"
+            return
+        }
+        guard !duePolicies.isEmpty else {
+            automationStatusMessage = "No due automation policies."
+            return
+        }
+
+        isExecuting = true
+        automationStatusMessage = "Running due automation policies..."
+        let runner = automationRunner
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let records = duePolicies.map { policy in
+                runner.run(policy: policy, snapshot: currentSnapshot, trigger: .scheduled)
+            }
+
+            DispatchQueue.main.async {
+                guard let self else {
+                    return
+                }
+                do {
+                    var policies = try self.automationStore.loadPolicies()
+                    var didExecute = false
+                    for record in records {
+                        try self.automationStore.appendRunHistory(record)
+                        if record.status == .executed {
+                            didExecute = true
+                            if let index = policies.firstIndex(where: { $0.id == record.policyID }) {
+                                policies[index].lastSuccessfulRunAt = record.finishedAt
+                                policies[index].updatedAt = record.finishedAt
+                            }
+                            if let report = record.executionReport {
+                                self.lastExecutionReport = report
+                            }
+                        }
+                    }
+                    try self.automationStore.savePolicies(policies)
+                    self.automationStatusMessage = didExecute
+                        ? "Due automation policies finished."
+                        : "Due automation policies were evaluated; no cleanup executed."
+                    self.loadAutomationState()
+                    self.reload()
+                } catch {
+                    self.automationStatusMessage = "Due automation run failed: \(error.localizedDescription)"
+                }
+                self.isExecuting = false
+            }
+        }
+    }
+}
+
+private func defaultAutomationStateDirectory() -> URL {
+    URL(filePath: NSHomeDirectory(), directoryHint: .isDirectory)
+        .appendingPathComponent(".xcodecleaner", isDirectory: true)
 }
 
 struct ContentView: View {
@@ -200,6 +452,14 @@ struct ContentView: View {
     @State private var allowDirectDeleteFallback = false
     @State private var selectedSwitchInstallPath: String = ""
     @State private var selectedStaleArtifactIDs: Set<String> = []
+    @State private var newPolicyName = ""
+    @State private var newPolicyEveryHours = ""
+    @State private var newPolicyMinAgeDays = ""
+    @State private var newPolicyMinTotalBytes = ""
+    @State private var newPolicyCategoryKinds: Set<StorageCategoryKind> = Set(DryRunSelection.safeCategoryDefaults.selectedCategoryKinds)
+    @State private var newPolicySkipIfToolsRunning = true
+    @State private var newPolicyAllowDirectDelete = false
+    @State private var automationFormError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -226,7 +486,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("XcodeCleaner")
                     .font(.largeTitle.bold())
-                Text("Sprint 7: Active Xcode switch + stale artifact management")
+                Text("Sprint 8: Policy automation and guarded background cleanup")
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -264,6 +524,7 @@ struct ContentView: View {
                 storageOverviewView(snapshot: snapshot)
                 modificationToolsView(snapshot: snapshot)
                 dryRunPlannerView(snapshot: snapshot)
+                automationPoliciesView()
                 installInventoryView(snapshot: snapshot)
                 simulatorInventoryView(snapshot: snapshot)
             }
@@ -588,6 +849,188 @@ struct ContentView: View {
         }
     }
 
+    private func automationPoliciesView() -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Automation Policies")
+                    .font(.headline)
+                Spacer()
+                Button("Run Due Policies Now") {
+                    viewModel.runDueAutomationPoliciesNow()
+                }
+                .disabled(viewModel.isExecuting || viewModel.isLoading)
+            }
+
+            Text(viewModel.automationStatusMessage)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Create Policy")
+                    .font(.subheadline.weight(.semibold))
+
+                TextField("Policy name", text: $newPolicyName)
+                    .textFieldStyle(.roundedBorder)
+
+                HStack(spacing: 8) {
+                    TextField("Every hours (blank = manual only)", text: $newPolicyEveryHours)
+                        .textFieldStyle(.roundedBorder)
+                    TextField("Min age days", text: $newPolicyMinAgeDays)
+                        .textFieldStyle(.roundedBorder)
+                    TextField("Min reclaim bytes", text: $newPolicyMinTotalBytes)
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                Text("Categories")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                ForEach(StorageCategoryKind.allCases, id: \.rawValue) { kind in
+                    Toggle(
+                        isOn: Binding(
+                            get: { newPolicyCategoryKinds.contains(kind) },
+                            set: { isSelected in
+                                if isSelected {
+                                    newPolicyCategoryKinds.insert(kind)
+                                } else {
+                                    newPolicyCategoryKinds.remove(kind)
+                                }
+                            }
+                        )
+                    ) {
+                        Text(title(for: kind))
+                    }
+                }
+
+                Toggle("Skip if Xcode/Simulator is running", isOn: $newPolicySkipIfToolsRunning)
+                Toggle("Allow direct delete fallback", isOn: $newPolicyAllowDirectDelete)
+
+                if let automationFormError {
+                    Text(automationFormError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+
+                Button("Create Automation Policy") {
+                    createPolicyFromForm()
+                }
+                .disabled(viewModel.isExecuting || viewModel.isLoading)
+            }
+            .padding(10)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+
+            Text("Configured Policies: \(viewModel.automationPolicies.count)")
+                .font(.subheadline.weight(.semibold))
+
+            if viewModel.automationPolicies.isEmpty {
+                Text("No automation policies yet.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(viewModel.automationPolicies) { policy in
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text(policy.name)
+                                .font(.callout.weight(.medium))
+                            Spacer()
+                            Text(policy.isEnabled ? "ENABLED" : "DISABLED")
+                                .font(.caption2.weight(.bold))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 3)
+                                .background(policy.isEnabled ? Color.green.opacity(0.2) : Color.gray.opacity(0.2))
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                        }
+
+                        Text("Schedule: \(formattedSchedule(for: policy))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("Categories: \(policy.selection.selectedCategoryKinds.map(title(for:)).joined(separator: ", "))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("Skip if tools running: \(policy.skipIfToolsRunning ? "Yes" : "No"), Direct delete fallback: \(policy.allowDirectDelete ? "Yes" : "No")")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if let minAgeDays = policy.minAgeDays {
+                            Text("Minimum age: \(minAgeDays) day(s)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        if let minBytes = policy.minTotalReclaimBytes {
+                            Text("Minimum reclaim: \(formatBytes(minBytes))")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Text("Last successful run: \(formatDateTime(policy.lastSuccessfulRunAt))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        HStack(spacing: 8) {
+                            Toggle(
+                                isOn: Binding(
+                                    get: { policy.isEnabled },
+                                    set: { newValue in
+                                        viewModel.setAutomationPolicyEnabled(
+                                            policyID: policy.id,
+                                            isEnabled: newValue
+                                        )
+                                    }
+                                )
+                            ) {
+                                Text("Enabled")
+                            }
+                            .toggleStyle(.switch)
+
+                            Button("Run Now") {
+                                viewModel.runAutomationPolicyNow(policyID: policy.id)
+                            }
+                            .disabled(viewModel.isExecuting || viewModel.isLoading)
+
+                            Button(role: .destructive) {
+                                viewModel.deleteAutomationPolicy(policyID: policy.id)
+                            } label: {
+                                Text("Delete")
+                            }
+                            .disabled(viewModel.isExecuting || viewModel.isLoading)
+                        }
+                    }
+                    .padding(10)
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                }
+            }
+
+            Text("Recent Runs")
+                .font(.subheadline.weight(.semibold))
+            if viewModel.automationRunHistory.isEmpty {
+                Text("No automation run history yet.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(Array(viewModel.automationRunHistory.prefix(8))) { record in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(record.policyName)
+                                .font(.callout.weight(.medium))
+                            Spacer()
+                            Text(record.status.rawValue.uppercased())
+                                .font(.caption.monospaced())
+                                .foregroundStyle(color(for: record.status))
+                            Text(formatBytes(record.totalReclaimedBytes))
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
+                        Text("Trigger: \(record.trigger.rawValue), Started: \(formatDateTime(record.startedAt)), Finished: \(formatDateTime(record.finishedAt))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(record.message)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(8)
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                }
+            }
+        }
+    }
+
     private func runtimeTelemetryView(snapshot: XcodeInventorySnapshot) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Runtime Telemetry")
@@ -831,6 +1274,136 @@ struct ContentView: View {
         }
     }
 
+    private func createPolicyFromForm() {
+        let trimmedName = newPolicyName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else {
+            automationFormError = "Policy name is required."
+            return
+        }
+
+        let everyHoursResult = parsePositiveInt(from: newPolicyEveryHours)
+        switch everyHoursResult {
+        case .invalid:
+            automationFormError = "Every hours must be a positive whole number."
+            return
+        case .none, .value:
+            break
+        }
+
+        let minAgeDaysResult = parsePositiveInt(from: newPolicyMinAgeDays)
+        switch minAgeDaysResult {
+        case .invalid:
+            automationFormError = "Minimum age days must be a positive whole number."
+            return
+        case .none, .value:
+            break
+        }
+
+        let minBytesResult = parseNonNegativeInt64(from: newPolicyMinTotalBytes)
+        switch minBytesResult {
+        case .invalid:
+            automationFormError = "Minimum reclaim bytes must be a non-negative whole number."
+            return
+        case .none, .value:
+            break
+        }
+
+        automationFormError = nil
+        viewModel.createAutomationPolicy(
+            name: trimmedName,
+            categoryKinds: Array(newPolicyCategoryKinds).sorted { $0.rawValue < $1.rawValue },
+            everyHours: everyHoursResult.value,
+            minAgeDays: minAgeDaysResult.value,
+            minTotalReclaimBytes: minBytesResult.value,
+            skipIfToolsRunning: newPolicySkipIfToolsRunning,
+            allowDirectDelete: newPolicyAllowDirectDelete
+        )
+
+        newPolicyName = ""
+        newPolicyEveryHours = ""
+        newPolicyMinAgeDays = ""
+        newPolicyMinTotalBytes = ""
+    }
+
+    private func title(for kind: StorageCategoryKind) -> String {
+        switch kind {
+        case .xcodeApplications:
+            return "Xcode Applications"
+        case .derivedData:
+            return "Derived Data"
+        case .archives:
+            return "Archives"
+        case .deviceSupport:
+            return "Device Support"
+        case .simulatorData:
+            return "Simulator Data"
+        }
+    }
+
+    private func formattedSchedule(for policy: AutomationPolicy) -> String {
+        switch policy.schedule {
+        case .manualOnly:
+            return "Manual only"
+        case .everyHours(let hours):
+            if let lastRun = policy.lastSuccessfulRunAt {
+                let nextDue = lastRun.addingTimeInterval(Double(hours) * 3_600)
+                return "Every \(hours)h (next due: \(formatDateTime(nextDue)))"
+            }
+            return "Every \(hours)h (next due: now)"
+        }
+    }
+
+    private func formatDateTime(_ date: Date?) -> String {
+        guard let date else {
+            return "Never"
+        }
+        return Self.dateTimeFormatter.string(from: date)
+    }
+
+    private enum ParsedIntResult<T> {
+        case none
+        case value(T)
+        case invalid
+
+        var value: T? {
+            switch self {
+            case .value(let value):
+                return value
+            case .none, .invalid:
+                return nil
+            }
+        }
+    }
+
+    private func parsePositiveInt(from text: String) -> ParsedIntResult<Int> {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return .none
+        }
+        guard let value = Int(trimmed), value > 0 else {
+            return .invalid
+        }
+        return .value(value)
+    }
+
+    private func parseNonNegativeInt64(from text: String) -> ParsedIntResult<Int64> {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return .none
+        }
+        guard let value = Int64(trimmed), value >= 0 else {
+            return .invalid
+        }
+        return .value(value)
+    }
+
+    private static let dateTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
     private func color(for safetyClassification: SafetyClassification) -> Color {
         switch safetyClassification {
         case .regenerable:
@@ -860,6 +1433,17 @@ struct ContentView: View {
         case .succeeded:
             return .green
         case .blocked:
+            return .orange
+        case .failed:
+            return .red
+        }
+    }
+
+    private func color(for status: AutomationRunStatus) -> Color {
+        switch status {
+        case .executed:
+            return .green
+        case .skipped:
             return .orange
         case .failed:
             return .red

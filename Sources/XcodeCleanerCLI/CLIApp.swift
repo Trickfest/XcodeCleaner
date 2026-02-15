@@ -5,25 +5,23 @@ import XcodeInventoryCore
 struct XcodeCleanerCLIApp {
     static func run(arguments: [String], environment: [String: String]) -> Int32 {
         do {
+            if arguments.first == "automation" {
+                return try runAutomationSubcommand(
+                    arguments: Array(arguments.dropFirst()),
+                    environment: environment
+                )
+            }
+
             let options = try CLIOptions.parse(arguments: arguments)
             if options.showHelp {
                 printUsage()
                 return 0
             }
 
-            let progressRenderer = CLIProgressRenderer(
+            let snapshot = scanSnapshot(
                 suppressProgress: options.suppressProgress,
-                stderrIsTTY: isTTY(fileDescriptor: FileHandle.standardError.fileDescriptor),
-                terminalColumnsProvider: { terminalWidth(fileDescriptor: FileHandle.standardError.fileDescriptor, environment: environment) },
-                environment: environment,
-                writeToStandardError: writeToStandardError
+                environment: environment
             )
-
-            let scanner = XcodeInventoryScanner()
-            let snapshot = scanner.scan { progress in
-                progressRenderer.handle(progress: progress)
-            }
-            progressRenderer.finish()
 
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -123,9 +121,335 @@ struct XcodeCleanerCLIApp {
             writeToStandardError("error: \(error.localizedDescription)\n")
             printUsage(toStandardError: true)
             return 2
+        } catch let error as AutomationCLIError {
+            writeToStandardError("error: \(error.localizedDescription)\n")
+            printAutomationUsage(toStandardError: true)
+            return 2
         } catch {
             writeToStandardError("error: \(error.localizedDescription)\n")
             return 1
+        }
+    }
+
+    private static func scanSnapshot(
+        suppressProgress: Bool,
+        environment: [String: String]
+    ) -> XcodeInventorySnapshot {
+        let progressRenderer = CLIProgressRenderer(
+            suppressProgress: suppressProgress,
+            stderrIsTTY: isTTY(fileDescriptor: FileHandle.standardError.fileDescriptor),
+            terminalColumnsProvider: { terminalWidth(fileDescriptor: FileHandle.standardError.fileDescriptor, environment: environment) },
+            environment: environment,
+            writeToStandardError: writeToStandardError
+        )
+
+        let scanner = XcodeInventoryScanner()
+        let snapshot = scanner.scan { progress in
+            progressRenderer.handle(progress: progress)
+        }
+        progressRenderer.finish()
+        return snapshot
+    }
+
+    private static func runAutomationSubcommand(
+        arguments: [String],
+        environment: [String: String]
+    ) throws -> Int32 {
+        if arguments.isEmpty
+            || arguments == ["--help"]
+            || arguments == ["-h"]
+            || arguments == ["help"] {
+            printAutomationUsage()
+            return 0
+        }
+
+        let options = try AutomationCLIOptions.parse(arguments: arguments)
+        let store = JSONAutomationPolicyStore(stateDirectoryURL: automationStateDirectory(environment: environment))
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+
+        switch options.command {
+        case .list:
+            let policies = try store.loadPolicies()
+            try printEncoded(policies, with: encoder)
+            return 0
+        case .create:
+            var policies = try store.loadPolicies()
+            let now = Date()
+            let categories = options.categories.isEmpty
+                ? DryRunSelection.safeCategoryDefaults.selectedCategoryKinds
+                : options.categories
+            let policy = AutomationPolicy(
+                name: options.name ?? "Untitled Policy",
+                schedule: options.everyHours.map { .everyHours($0) } ?? .manualOnly,
+                selection: DryRunSelection(
+                    selectedCategoryKinds: categories,
+                    selectedSimulatorDeviceUDIDs: [],
+                    selectedXcodeInstallPaths: []
+                ),
+                minAgeDays: options.minAgeDays,
+                minTotalReclaimBytes: options.minTotalBytes,
+                skipIfToolsRunning: options.skipIfToolsRunning,
+                allowDirectDelete: options.allowDirectDelete,
+                createdAt: now,
+                updatedAt: now
+            )
+            policies.append(policy)
+            policies.sort { $0.createdAt < $1.createdAt }
+            try store.savePolicies(policies)
+            try printEncoded(policy, with: encoder)
+            return 0
+        case .run:
+            guard let policyID = options.policyID else {
+                throw AutomationCLIError.missingRequiredOption("--id")
+            }
+            var policies = try store.loadPolicies()
+            guard let policyIndex = policies.firstIndex(where: { $0.id == policyID }) else {
+                throw AutomationCLIError.policyNotFound(policyID)
+            }
+            let snapshot = scanSnapshot(
+                suppressProgress: options.suppressProgress,
+                environment: environment
+            )
+            let runner = AutomationPolicyRunner()
+            let record = runner.run(
+                policy: policies[policyIndex],
+                snapshot: snapshot,
+                trigger: .manual
+            )
+            try store.appendRunHistory(record)
+            if record.status == .executed {
+                policies[policyIndex].lastSuccessfulRunAt = record.finishedAt
+                policies[policyIndex].updatedAt = record.finishedAt
+                try store.savePolicies(policies)
+            }
+            try printEncoded(record, with: encoder)
+            return record.status == .failed ? 1 : 0
+        case .runDue:
+            var policies = try store.loadPolicies()
+            let duePolicies = AutomationPolicies.duePolicies(from: policies, now: Date())
+            if duePolicies.isEmpty {
+                try printEncoded([AutomationPolicyRunRecord](), with: encoder)
+                return 0
+            }
+
+            let snapshot = scanSnapshot(
+                suppressProgress: options.suppressProgress,
+                environment: environment
+            )
+            let runner = AutomationPolicyRunner()
+            var records: [AutomationPolicyRunRecord] = []
+            var didFail = false
+
+            for policy in duePolicies {
+                let record = runner.run(policy: policy, snapshot: snapshot, trigger: .scheduled)
+                records.append(record)
+                try store.appendRunHistory(record)
+                if record.status == .executed,
+                   let index = policies.firstIndex(where: { $0.id == policy.id }) {
+                    policies[index].lastSuccessfulRunAt = record.finishedAt
+                    policies[index].updatedAt = record.finishedAt
+                }
+                if record.status == .failed {
+                    didFail = true
+                }
+            }
+            try store.savePolicies(policies)
+            try printEncoded(records, with: encoder)
+            return didFail ? 1 : 0
+        case .history:
+            var history = try store.loadRunHistory()
+            if let limit = options.limit, limit >= 0 {
+                history = Array(history.prefix(limit))
+            }
+            try printEncoded(history, with: encoder)
+            return 0
+        }
+    }
+
+    private static func printEncoded<T: Encodable>(_ value: T, with encoder: JSONEncoder) throws {
+        let data = try encoder.encode(value)
+        if let output = String(data: data, encoding: .utf8) {
+            print(output)
+        }
+    }
+
+    private static func automationStateDirectory(environment: [String: String]) -> URL {
+        if let override = environment["XCODECLEANER_STATE_DIR"], !override.isEmpty {
+            return URL(filePath: override, directoryHint: .isDirectory)
+        }
+        return URL(filePath: NSHomeDirectory(), directoryHint: .isDirectory)
+            .appendingPathComponent(".xcodecleaner", isDirectory: true)
+    }
+}
+
+private enum AutomationCommand: String {
+    case list
+    case create
+    case run
+    case runDue = "run-due"
+    case history
+}
+
+private struct AutomationCLIOptions {
+    let command: AutomationCommand
+    let suppressProgress: Bool
+    let name: String?
+    let policyID: String?
+    let categories: [StorageCategoryKind]
+    let everyHours: Int?
+    let minAgeDays: Int?
+    let minTotalBytes: Int64?
+    let skipIfToolsRunning: Bool
+    let allowDirectDelete: Bool
+    let limit: Int?
+
+    static func parse(arguments: [String]) throws -> AutomationCLIOptions {
+        guard let commandString = arguments.first,
+              let command = AutomationCommand(rawValue: commandString) else {
+            throw AutomationCLIError.missingCommand
+        }
+
+        var suppressProgress = false
+        var name: String?
+        var policyID: String?
+        var categories: [StorageCategoryKind] = []
+        var everyHours: Int?
+        var minAgeDays: Int?
+        var minTotalBytes: Int64?
+        var skipIfToolsRunning = true
+        var allowDirectDelete = false
+        var limit: Int?
+
+        var index = 1
+        while index < arguments.count {
+            let argument = arguments[index]
+            switch argument {
+            case "--no-progress":
+                suppressProgress = true
+            case "--name":
+                guard index + 1 < arguments.count else {
+                    throw AutomationCLIError.missingRequiredOption("--name")
+                }
+                name = arguments[index + 1]
+                index += 1
+            case "--id":
+                guard index + 1 < arguments.count else {
+                    throw AutomationCLIError.missingRequiredOption("--id")
+                }
+                policyID = arguments[index + 1]
+                index += 1
+            case "--category":
+                guard index + 1 < arguments.count else {
+                    throw AutomationCLIError.missingRequiredOption("--category")
+                }
+                let raw = arguments[index + 1]
+                guard let category = StorageCategoryKind(rawValue: raw) else {
+                    throw AutomationCLIError.invalidCategory(raw)
+                }
+                categories.append(category)
+                index += 1
+            case "--every-hours":
+                guard index + 1 < arguments.count else {
+                    throw AutomationCLIError.missingRequiredOption("--every-hours")
+                }
+                guard let value = Int(arguments[index + 1]), value > 0 else {
+                    throw AutomationCLIError.invalidValue("--every-hours")
+                }
+                everyHours = value
+                index += 1
+            case "--min-age-days":
+                guard index + 1 < arguments.count else {
+                    throw AutomationCLIError.missingRequiredOption("--min-age-days")
+                }
+                guard let value = Int(arguments[index + 1]), value > 0 else {
+                    throw AutomationCLIError.invalidValue("--min-age-days")
+                }
+                minAgeDays = value
+                index += 1
+            case "--min-total-bytes":
+                guard index + 1 < arguments.count else {
+                    throw AutomationCLIError.missingRequiredOption("--min-total-bytes")
+                }
+                guard let value = Int64(arguments[index + 1]), value >= 0 else {
+                    throw AutomationCLIError.invalidValue("--min-total-bytes")
+                }
+                minTotalBytes = value
+                index += 1
+            case "--allow-direct-delete":
+                allowDirectDelete = true
+            case "--skip-if-tools-running":
+                skipIfToolsRunning = true
+            case "--no-skip-if-tools-running":
+                skipIfToolsRunning = false
+            case "--limit":
+                guard index + 1 < arguments.count else {
+                    throw AutomationCLIError.missingRequiredOption("--limit")
+                }
+                guard let value = Int(arguments[index + 1]), value >= 0 else {
+                    throw AutomationCLIError.invalidValue("--limit")
+                }
+                limit = value
+                index += 1
+            default:
+                throw AutomationCLIError.unrecognizedArgument(argument)
+            }
+            index += 1
+        }
+
+        switch command {
+        case .create:
+            guard let name, !name.isEmpty else {
+                throw AutomationCLIError.missingRequiredOption("--name")
+            }
+        case .run:
+            guard let policyID, !policyID.isEmpty else {
+                throw AutomationCLIError.missingRequiredOption("--id")
+            }
+        case .runDue, .list, .history:
+            break
+        }
+
+        return AutomationCLIOptions(
+            command: command,
+            suppressProgress: suppressProgress,
+            name: name,
+            policyID: policyID,
+            categories: Array(Set(categories)).sorted { $0.rawValue < $1.rawValue },
+            everyHours: everyHours,
+            minAgeDays: minAgeDays,
+            minTotalBytes: minTotalBytes,
+            skipIfToolsRunning: skipIfToolsRunning,
+            allowDirectDelete: allowDirectDelete,
+            limit: limit
+        )
+    }
+}
+
+private enum AutomationCLIError: LocalizedError {
+    case missingCommand
+    case missingRequiredOption(String)
+    case invalidCategory(String)
+    case invalidValue(String)
+    case unrecognizedArgument(String)
+    case policyNotFound(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .missingCommand:
+            return "missing automation command; expected one of: list, create, run, run-due, history"
+        case .missingRequiredOption(let option):
+            return "missing required option value for \(option)"
+        case .invalidCategory(let value):
+            let available = StorageCategoryKind.allCases.map(\.rawValue).joined(separator: ", ")
+            return "invalid category '\(value)'; expected one of: \(available)"
+        case .invalidValue(let option):
+            return "invalid value for \(option)"
+        case .unrecognizedArgument(let argument):
+            return "unrecognized argument '\(argument)'"
+        case .policyNotFound(let policyID):
+            return "automation policy '\(policyID)' was not found"
         }
     }
 }
@@ -178,8 +502,39 @@ func printUsage(toStandardError: Bool = false) {
       --plan-xcode-install <path>    Include specific Xcode app bundle path in plan
       --help                         Show this help message
 
+    Automation:
+      xcodecleaner-cli automation list
+      xcodecleaner-cli automation create --name <name> [--category <kind> ...] [--every-hours <n>] [--min-age-days <n>] [--min-total-bytes <bytes>] [--allow-direct-delete] [--no-skip-if-tools-running]
+      xcodecleaner-cli automation run --id <policy-id> [--no-progress]
+      xcodecleaner-cli automation run-due [--no-progress]
+      xcodecleaner-cli automation history [--limit <n>]
+
     Storage Categories:
       \(categoryValues)
+    """
+    if toStandardError {
+        writeToStandardError("\(usage)\n")
+    } else {
+        print(usage)
+    }
+}
+
+func printAutomationUsage(toStandardError: Bool = false) {
+    let categoryValues = StorageCategoryKind.allCases.map(\.rawValue).joined(separator: ", ")
+    let usage = """
+    Usage:
+      xcodecleaner-cli automation list
+      xcodecleaner-cli automation create --name <name> [--category <kind> ...] [--every-hours <n>] [--min-age-days <n>] [--min-total-bytes <bytes>] [--allow-direct-delete] [--no-skip-if-tools-running]
+      xcodecleaner-cli automation run --id <policy-id> [--no-progress]
+      xcodecleaner-cli automation run-due [--no-progress]
+      xcodecleaner-cli automation history [--limit <n>]
+
+    Notes:
+      - If no categories are provided during create, safe defaults are used.
+      - Supported categories: \(categoryValues)
+      - Schedule:
+        - Omit --every-hours for manual-only policy.
+        - Provide --every-hours for scheduled policy cadence.
     """
     if toStandardError {
         writeToStandardError("\(usage)\n")
