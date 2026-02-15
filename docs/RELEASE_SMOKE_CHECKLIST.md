@@ -35,11 +35,13 @@
 - Verify report schema compatibility against `docs/REPORT_SCHEMA.md`.
 
 ## GUI Functional Smoke
-- App launches and scan completes.
-- Progress bar updates throughout scan phases.
-- Automation section loads policies and history.
-- Automation trends show 7-day and 30-day windows.
-- Export buttons create files under `~/.xcodecleaner/exports`.
+- Deferred to Sprint 10 due planned UI reorganization.
+- After Sprint 10 UI changes, run:
+  - App launches and scan completes.
+  - Progress bar updates throughout scan phases.
+  - Automation section loads policies and history.
+  - Automation trends show 7-day and 30-day windows.
+  - Export buttons create files under `~/.xcodecleaner/exports`.
 
 ## Optional Future Packaging and Signing
 - Build release artifacts for GUI and CLI.

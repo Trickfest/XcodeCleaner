@@ -6,7 +6,8 @@
 - Every sprint must ship both artifacts:
 - `XcodeCleanerApp` for interactive workflows.
 - `xcodecleaner-cli` for scriptable workflows.
-- No sprint closes without automated tests for new behavior and a manual smoke test script.
+- No sprint closes without automated tests for new behavior and a smoke test script.
+- Manual GUI smoke may be deferred one sprint when an upcoming UI reorganization would invalidate the pass.
 
 ## Sprint Plan
 
@@ -20,8 +21,8 @@
 | 6 | V1 | Safe execution engine (move-to-Trash first, guarded delete fallback) + selective simulator-device deletion + selective per-install Xcode uninstall + action log | Integration tests validate multi-device deletion and multi-install Xcode uninstall, reclaimed bytes, blocked booted-device and active/running-Xcode guardrails, and logs | Users reclaim disk safely with precise control over simulator and Xcode-install cleanup |
 | 7 | V1 | Modification tools: switch active Xcode and manage stale runtimes/device support | `xcode-select` switch validated in integration tests; runtime guardrails enforced | Users can actively tune local Xcode environment, not just clean files |
 | 8 | V1 | Automation policies (age/size/category) with "only when Xcode/simulator closed" checks | Scheduled/manual runs validated; guard conditions tested | Ongoing disk hygiene without manual effort |
-| 9 | V1 GA | History/trends, JSON+CSV report export, and source-first release readiness | Release smoke suite passes; clone/build/run works on a clean developer Mac; report exports are validated | Shippable V1 for developer users with low-friction source distribution |
-| 10 | V1 | UI cleanup and workflow organization pass | Core user flows are reorganized and usability smoke checks pass without feature regressions | Users can find cleanup, automation, and modification actions faster |
+| 9 | V1 GA | History/trends, JSON+CSV report export, and source-first release readiness | Automated regression and CLI/report smoke pass; clone/build/run works on a clean developer Mac; report exports are validated | Shippable V1 for developer users with low-friction source distribution |
+| 10 | V1 | UI cleanup and workflow organization pass | Core user flows are reorganized and manual GUI smoke checks pass without feature regressions | Users can find cleanup, automation, and modification actions faster |
 | 11 | V2 | Recommendation engine with explainable ranking | Recommendation outputs stable on fixture scenarios; rationale shown in UI | Faster decision-making for cleanup opportunities |
 | 12 | V2 | Policy import/export for teams + simulation mode | Round-trip policy tests pass; simulation and live results aligned | Team consistency and repeatable workstation standards |
 | 13 | V2 GA | Multi-step automation workflows + threshold alerts | Workflow tests pass with fail/retry paths; alert threshold logic verified | Proactive maintenance and reduced disk incidents |
@@ -46,4 +47,4 @@ Each sprint must leave users with at least one new outcome they can realize imme
 - Better predictability.
 
 ## Immediate Next Action
-Sprint 9 is now in progress for history/trends, report export, and source-first V1 release readiness; Sprint 10 remains reserved for UI cleanup/workflow organization.
+Sprint 9 is complete for source-first/reporting scope; Sprint 10 is next for UI cleanup/workflow organization and the deferred manual GUI smoke pass.
