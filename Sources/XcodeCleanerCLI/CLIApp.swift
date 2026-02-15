@@ -172,7 +172,7 @@ struct XcodeCleanerCLIApp {
         switch options.command {
         case .list:
             let policies = try store.loadPolicies()
-            try printEncoded(policies, with: encoder)
+            try printEncoded(policies, with: encoder, outputPath: options.outputPath)
             return 0
         case .create:
             var policies = try store.loadPolicies()
@@ -198,7 +198,7 @@ struct XcodeCleanerCLIApp {
             policies.append(policy)
             policies.sort { $0.createdAt < $1.createdAt }
             try store.savePolicies(policies)
-            try printEncoded(policy, with: encoder)
+            try printEncoded(policy, with: encoder, outputPath: options.outputPath)
             return 0
         case .run:
             guard let policyID = options.policyID else {
@@ -224,13 +224,13 @@ struct XcodeCleanerCLIApp {
                 policies[policyIndex].updatedAt = record.finishedAt
                 try store.savePolicies(policies)
             }
-            try printEncoded(record, with: encoder)
+            try printEncoded(record, with: encoder, outputPath: options.outputPath)
             return record.status == .failed ? 1 : 0
         case .runDue:
             var policies = try store.loadPolicies()
             let duePolicies = AutomationPolicies.duePolicies(from: policies, now: Date())
             if duePolicies.isEmpty {
-                try printEncoded([AutomationPolicyRunRecord](), with: encoder)
+                try printEncoded([AutomationPolicyRunRecord](), with: encoder, outputPath: options.outputPath)
                 return 0
             }
 
@@ -256,23 +256,67 @@ struct XcodeCleanerCLIApp {
                 }
             }
             try store.savePolicies(policies)
-            try printEncoded(records, with: encoder)
+            try printEncoded(records, with: encoder, outputPath: options.outputPath)
             return didFail ? 1 : 0
         case .history:
             var history = try store.loadRunHistory()
             if let limit = options.limit, limit >= 0 {
                 history = Array(history.prefix(limit))
             }
-            try printEncoded(history, with: encoder)
+            switch options.outputFormat {
+            case .json:
+                try printEncoded(history, with: encoder, outputPath: options.outputPath)
+            case .csv:
+                let csv = AutomationHistoryCSVExporter.export(records: history)
+                try writeText(csv, outputPath: options.outputPath)
+            }
+            return 0
+        case .trends:
+            let history = try store.loadRunHistory()
+            let windows = options.trendDays.isEmpty ? [7, 30] : options.trendDays
+            let summaries = AutomationHistoryTrends.summaries(records: history, windowsInDays: windows)
+            switch options.outputFormat {
+            case .json:
+                try printEncoded(summaries, with: encoder, outputPath: options.outputPath)
+            case .csv:
+                let csv = AutomationTrendCSVExporter.export(summaries: summaries)
+                try writeText(csv, outputPath: options.outputPath)
+            }
             return 0
         }
     }
 
-    private static func printEncoded<T: Encodable>(_ value: T, with encoder: JSONEncoder) throws {
+    private static func printEncoded<T: Encodable>(
+        _ value: T,
+        with encoder: JSONEncoder,
+        outputPath: String? = nil
+    ) throws {
         let data = try encoder.encode(value)
+        if let outputPath, !outputPath.isEmpty {
+            try writeData(data, outputPath: outputPath)
+            return
+        }
         if let output = String(data: data, encoding: .utf8) {
             print(output)
         }
+    }
+
+    private static func writeText(_ text: String, outputPath: String?) throws {
+        if let outputPath, !outputPath.isEmpty {
+            guard let data = text.data(using: .utf8) else {
+                throw CocoaError(.fileWriteUnknown)
+            }
+            try writeData(data, outputPath: outputPath)
+            return
+        }
+        print(text)
+    }
+
+    private static func writeData(_ data: Data, outputPath: String) throws {
+        let outputURL = URL(filePath: outputPath, directoryHint: .notDirectory)
+        let parentURL = outputURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: parentURL, withIntermediateDirectories: true)
+        try data.write(to: outputURL, options: [.atomic])
     }
 
     private static func automationStateDirectory(environment: [String: String]) -> URL {
@@ -290,6 +334,12 @@ private enum AutomationCommand: String {
     case run
     case runDue = "run-due"
     case history
+    case trends
+}
+
+private enum AutomationOutputFormat: String {
+    case json
+    case csv
 }
 
 private struct AutomationCLIOptions {
@@ -304,6 +354,9 @@ private struct AutomationCLIOptions {
     let skipIfToolsRunning: Bool
     let allowDirectDelete: Bool
     let limit: Int?
+    let outputFormat: AutomationOutputFormat
+    let outputPath: String?
+    let trendDays: [Int]
 
     static func parse(arguments: [String]) throws -> AutomationCLIOptions {
         guard let commandString = arguments.first,
@@ -321,6 +374,9 @@ private struct AutomationCLIOptions {
         var skipIfToolsRunning = true
         var allowDirectDelete = false
         var limit: Int?
+        var outputFormat: AutomationOutputFormat = .json
+        var outputPath: String?
+        var trendDays: [Int] = []
 
         var index = 1
         while index < arguments.count {
@@ -392,6 +448,31 @@ private struct AutomationCLIOptions {
                 }
                 limit = value
                 index += 1
+            case "--format":
+                guard index + 1 < arguments.count else {
+                    throw AutomationCLIError.missingRequiredOption("--format")
+                }
+                let raw = arguments[index + 1]
+                guard let format = AutomationOutputFormat(rawValue: raw) else {
+                    throw AutomationCLIError.invalidValue("--format")
+                }
+                outputFormat = format
+                index += 1
+            case "--output":
+                guard index + 1 < arguments.count else {
+                    throw AutomationCLIError.missingRequiredOption("--output")
+                }
+                outputPath = arguments[index + 1]
+                index += 1
+            case "--days":
+                guard index + 1 < arguments.count else {
+                    throw AutomationCLIError.missingRequiredOption("--days")
+                }
+                guard let value = Int(arguments[index + 1]), value > 0 else {
+                    throw AutomationCLIError.invalidValue("--days")
+                }
+                trendDays.append(value)
+                index += 1
             default:
                 throw AutomationCLIError.unrecognizedArgument(argument)
             }
@@ -407,8 +488,22 @@ private struct AutomationCLIOptions {
             guard let policyID, !policyID.isEmpty else {
                 throw AutomationCLIError.missingRequiredOption("--id")
             }
-        case .runDue, .list, .history:
+        case .history:
             break
+        case .trends:
+            break
+        case .runDue, .list:
+            break
+        }
+
+        if !trendDays.isEmpty, command != .trends {
+            throw AutomationCLIError.unsupportedOptionForCommand("--days", command.rawValue)
+        }
+        if command == .trends, limit != nil {
+            throw AutomationCLIError.unsupportedOptionForCommand("--limit", command.rawValue)
+        }
+        if command != .history, command != .trends, outputFormat != .json {
+            throw AutomationCLIError.unsupportedOptionForCommand("--format", command.rawValue)
         }
 
         return AutomationCLIOptions(
@@ -422,7 +517,10 @@ private struct AutomationCLIOptions {
             minTotalBytes: minTotalBytes,
             skipIfToolsRunning: skipIfToolsRunning,
             allowDirectDelete: allowDirectDelete,
-            limit: limit
+            limit: limit,
+            outputFormat: outputFormat,
+            outputPath: outputPath,
+            trendDays: Array(Set(trendDays)).sorted()
         )
     }
 }
@@ -434,11 +532,12 @@ private enum AutomationCLIError: LocalizedError {
     case invalidValue(String)
     case unrecognizedArgument(String)
     case policyNotFound(String)
+    case unsupportedOptionForCommand(String, String)
 
     var errorDescription: String? {
         switch self {
         case .missingCommand:
-            return "missing automation command; expected one of: list, create, run, run-due, history"
+            return "missing automation command; expected one of: list, create, run, run-due, history, trends"
         case .missingRequiredOption(let option):
             return "missing required option value for \(option)"
         case .invalidCategory(let value):
@@ -450,6 +549,8 @@ private enum AutomationCLIError: LocalizedError {
             return "unrecognized argument '\(argument)'"
         case .policyNotFound(let policyID):
             return "automation policy '\(policyID)' was not found"
+        case .unsupportedOptionForCommand(let option, let command):
+            return "\(option) is not supported for automation command '\(command)'"
         }
     }
 }
@@ -503,11 +604,12 @@ func printUsage(toStandardError: Bool = false) {
       --help                         Show this help message
 
     Automation:
-      xcodecleaner-cli automation list
-      xcodecleaner-cli automation create --name <name> [--category <kind> ...] [--every-hours <n>] [--min-age-days <n>] [--min-total-bytes <bytes>] [--allow-direct-delete] [--no-skip-if-tools-running]
-      xcodecleaner-cli automation run --id <policy-id> [--no-progress]
-      xcodecleaner-cli automation run-due [--no-progress]
-      xcodecleaner-cli automation history [--limit <n>]
+      xcodecleaner-cli automation list [--output <path>]
+      xcodecleaner-cli automation create --name <name> [--category <kind> ...] [--every-hours <n>] [--min-age-days <n>] [--min-total-bytes <bytes>] [--allow-direct-delete] [--no-skip-if-tools-running] [--output <path>]
+      xcodecleaner-cli automation run --id <policy-id> [--no-progress] [--output <path>]
+      xcodecleaner-cli automation run-due [--no-progress] [--output <path>]
+      xcodecleaner-cli automation history [--limit <n>] [--format json|csv] [--output <path>]
+      xcodecleaner-cli automation trends [--days <n> ...] [--format json|csv] [--output <path>]
 
     Storage Categories:
       \(categoryValues)
@@ -523,11 +625,12 @@ func printAutomationUsage(toStandardError: Bool = false) {
     let categoryValues = StorageCategoryKind.allCases.map(\.rawValue).joined(separator: ", ")
     let usage = """
     Usage:
-      xcodecleaner-cli automation list
-      xcodecleaner-cli automation create --name <name> [--category <kind> ...] [--every-hours <n>] [--min-age-days <n>] [--min-total-bytes <bytes>] [--allow-direct-delete] [--no-skip-if-tools-running]
-      xcodecleaner-cli automation run --id <policy-id> [--no-progress]
-      xcodecleaner-cli automation run-due [--no-progress]
-      xcodecleaner-cli automation history [--limit <n>]
+      xcodecleaner-cli automation list [--output <path>]
+      xcodecleaner-cli automation create --name <name> [--category <kind> ...] [--every-hours <n>] [--min-age-days <n>] [--min-total-bytes <bytes>] [--allow-direct-delete] [--no-skip-if-tools-running] [--output <path>]
+      xcodecleaner-cli automation run --id <policy-id> [--no-progress] [--output <path>]
+      xcodecleaner-cli automation run-due [--no-progress] [--output <path>]
+      xcodecleaner-cli automation history [--limit <n>] [--format json|csv] [--output <path>]
+      xcodecleaner-cli automation trends [--days <n> ...] [--format json|csv] [--output <path>]
 
     Notes:
       - If no categories are provided during create, safe defaults are used.
@@ -535,6 +638,8 @@ func printAutomationUsage(toStandardError: Bool = false) {
       - Schedule:
         - Omit --every-hours for manual-only policy.
         - Provide --every-hours for scheduled policy cadence.
+      - history/trends default to JSON output; pass --format csv for CSV.
+      - trends defaults to 7-day and 30-day windows unless --days is provided.
     """
     if toStandardError {
         writeToStandardError("\(usage)\n")

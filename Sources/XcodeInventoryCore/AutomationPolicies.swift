@@ -392,3 +392,120 @@ public struct AutomationPolicyRunner: @unchecked Sendable {
         )
     }
 }
+
+public struct AutomationHistoryWindowSummary: Codable, Equatable, Sendable {
+    public let windowDays: Int
+    public let totalRuns: Int
+    public let executedRuns: Int
+    public let skippedRuns: Int
+    public let failedRuns: Int
+    public let totalReclaimedBytes: Int64
+
+    public init(
+        windowDays: Int,
+        totalRuns: Int,
+        executedRuns: Int,
+        skippedRuns: Int,
+        failedRuns: Int,
+        totalReclaimedBytes: Int64
+    ) {
+        self.windowDays = windowDays
+        self.totalRuns = totalRuns
+        self.executedRuns = executedRuns
+        self.skippedRuns = skippedRuns
+        self.failedRuns = failedRuns
+        self.totalReclaimedBytes = totalReclaimedBytes
+    }
+}
+
+public enum AutomationHistoryTrends {
+    public static func summaries(
+        records: [AutomationPolicyRunRecord],
+        windowsInDays: [Int] = [7, 30],
+        now: Date = Date()
+    ) -> [AutomationHistoryWindowSummary] {
+        windowsInDays
+            .filter { $0 > 0 }
+            .map { windowDays in
+                let cutoff = now.addingTimeInterval(-Double(windowDays) * 86_400)
+                let windowRecords = records.filter { $0.startedAt >= cutoff }
+
+                let executed = windowRecords.filter { $0.status == .executed }.count
+                let skipped = windowRecords.filter { $0.status == .skipped }.count
+                let failed = windowRecords.filter { $0.status == .failed }.count
+                let reclaimed = windowRecords.reduce(Int64(0)) { partial, record in
+                    partial + record.totalReclaimedBytes
+                }
+
+                return AutomationHistoryWindowSummary(
+                    windowDays: windowDays,
+                    totalRuns: windowRecords.count,
+                    executedRuns: executed,
+                    skippedRuns: skipped,
+                    failedRuns: failed,
+                    totalReclaimedBytes: reclaimed
+                )
+            }
+    }
+}
+
+public enum AutomationHistoryCSVExporter {
+    public static func export(records: [AutomationPolicyRunRecord]) -> String {
+        var lines: [String] = []
+        lines.append([
+            "runID",
+            "policyID",
+            "policyName",
+            "trigger",
+            "status",
+            "startedAt",
+            "finishedAt",
+            "totalReclaimedBytes",
+            "skippedReason",
+            "message",
+        ].joined(separator: ","))
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+
+        for record in records {
+            let columns = [
+                record.runID,
+                record.policyID,
+                record.policyName,
+                record.trigger.rawValue,
+                record.status.rawValue,
+                formatter.string(from: record.startedAt),
+                formatter.string(from: record.finishedAt),
+                String(record.totalReclaimedBytes),
+                record.skippedReason ?? "",
+                record.message,
+            ]
+            lines.append(columns.map(escapedCSVField).joined(separator: ","))
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func escapedCSVField(_ value: String) -> String {
+        let escaped = value.replacingOccurrences(of: "\"", with: "\"\"")
+        return "\"\(escaped)\""
+    }
+}
+
+public enum AutomationTrendCSVExporter {
+    public static func export(summaries: [AutomationHistoryWindowSummary]) -> String {
+        var lines: [String] = []
+        lines.append("windowDays,totalRuns,executedRuns,skippedRuns,failedRuns,totalReclaimedBytes")
+        for summary in summaries {
+            lines.append([
+                String(summary.windowDays),
+                String(summary.totalRuns),
+                String(summary.executedRuns),
+                String(summary.skippedRuns),
+                String(summary.failedRuns),
+                String(summary.totalReclaimedBytes),
+            ].joined(separator: ","))
+        }
+        return lines.joined(separator: "\n")
+    }
+}

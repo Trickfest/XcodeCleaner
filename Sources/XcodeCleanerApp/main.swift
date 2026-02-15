@@ -31,6 +31,9 @@ final class InventoryViewModel: ObservableObject {
     @Published private(set) var switchStatusMessage = "No active-Xcode switch executed yet."
     @Published private(set) var automationPolicies: [AutomationPolicy] = []
     @Published private(set) var automationRunHistory: [AutomationPolicyRunRecord] = []
+    @Published private(set) var automationAllTimeSummary: AutomationHistoryWindowSummary?
+    @Published private(set) var automationTrendSummaries: [AutomationHistoryWindowSummary] = []
+    @Published private(set) var automationLastExportPath: String?
     @Published private(set) var automationStatusMessage = "No automation runs yet."
 
     private let scanner: XcodeInventoryScanner
@@ -111,7 +114,10 @@ final class InventoryViewModel: ObservableObject {
                 }
                 return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
             }
-            automationRunHistory = Array(try automationStore.loadRunHistory().prefix(20))
+            let fullHistory = try automationStore.loadRunHistory()
+            automationRunHistory = Array(fullHistory.prefix(20))
+            automationAllTimeSummary = makeAllTimeSummary(from: fullHistory)
+            automationTrendSummaries = AutomationHistoryTrends.summaries(records: fullHistory)
         } catch {
             automationStatusMessage = "Failed to load automation state: \(error.localizedDescription)"
         }
@@ -437,6 +443,105 @@ final class InventoryViewModel: ObservableObject {
             }
         }
     }
+
+    func exportAutomationHistoryJSON() {
+        do {
+            let history = try automationStore.loadRunHistory()
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            encoder.dateEncodingStrategy = .iso8601
+            let data = try encoder.encode(history)
+            let outputURL = try writeAutomationExport(data: data, baseFileName: "automation-history", fileExtension: "json")
+            automationLastExportPath = outputURL.path
+            automationStatusMessage = "Exported automation history JSON (\(history.count) runs) to \(outputURL.path)."
+        } catch {
+            automationStatusMessage = "Failed to export automation history JSON: \(error.localizedDescription)"
+        }
+    }
+
+    func exportAutomationHistoryCSV() {
+        do {
+            let history = try automationStore.loadRunHistory()
+            let csv = AutomationHistoryCSVExporter.export(records: history)
+            guard let data = csv.data(using: .utf8) else {
+                throw CocoaError(.fileWriteInapplicableStringEncoding)
+            }
+            let outputURL = try writeAutomationExport(data: data, baseFileName: "automation-history", fileExtension: "csv")
+            automationLastExportPath = outputURL.path
+            automationStatusMessage = "Exported automation history CSV (\(history.count) runs) to \(outputURL.path)."
+        } catch {
+            automationStatusMessage = "Failed to export automation history CSV: \(error.localizedDescription)"
+        }
+    }
+
+    func exportAutomationTrendsJSON() {
+        do {
+            let history = try automationStore.loadRunHistory()
+            let summaries = AutomationHistoryTrends.summaries(records: history)
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let data = try encoder.encode(summaries)
+            let outputURL = try writeAutomationExport(data: data, baseFileName: "automation-trends", fileExtension: "json")
+            automationLastExportPath = outputURL.path
+            automationStatusMessage = "Exported automation trends JSON (\(summaries.count) window(s)) to \(outputURL.path)."
+        } catch {
+            automationStatusMessage = "Failed to export automation trends JSON: \(error.localizedDescription)"
+        }
+    }
+
+    func exportAutomationTrendsCSV() {
+        do {
+            let history = try automationStore.loadRunHistory()
+            let summaries = AutomationHistoryTrends.summaries(records: history)
+            let csv = AutomationTrendCSVExporter.export(summaries: summaries)
+            guard let data = csv.data(using: .utf8) else {
+                throw CocoaError(.fileWriteInapplicableStringEncoding)
+            }
+            let outputURL = try writeAutomationExport(data: data, baseFileName: "automation-trends", fileExtension: "csv")
+            automationLastExportPath = outputURL.path
+            automationStatusMessage = "Exported automation trends CSV (\(summaries.count) window(s)) to \(outputURL.path)."
+        } catch {
+            automationStatusMessage = "Failed to export automation trends CSV: \(error.localizedDescription)"
+        }
+    }
+
+    private func writeAutomationExport(data: Data, baseFileName: String, fileExtension: String) throws -> URL {
+        let directoryURL = defaultAutomationStateDirectory()
+            .appendingPathComponent("exports", isDirectory: true)
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        let timestamp = Self.exportTimestampFormatter.string(from: Date())
+        let outputURL = directoryURL.appendingPathComponent("\(baseFileName)-\(timestamp).\(fileExtension)", isDirectory: false)
+        try data.write(to: outputURL, options: [.atomic])
+        return outputURL
+    }
+
+    private static let exportTimestampFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return formatter
+    }()
+
+    private func makeAllTimeSummary(from records: [AutomationPolicyRunRecord]) -> AutomationHistoryWindowSummary? {
+        guard !records.isEmpty else {
+            return nil
+        }
+        let executed = records.filter { $0.status == .executed }.count
+        let skipped = records.filter { $0.status == .skipped }.count
+        let failed = records.filter { $0.status == .failed }.count
+        let reclaimed = records.reduce(Int64(0)) { partial, record in
+            partial + record.totalReclaimedBytes
+        }
+        return AutomationHistoryWindowSummary(
+            windowDays: 0,
+            totalRuns: records.count,
+            executedRuns: executed,
+            skippedRuns: skipped,
+            failedRuns: failed,
+            totalReclaimedBytes: reclaimed
+        )
+    }
 }
 
 private func defaultAutomationStateDirectory() -> URL {
@@ -486,7 +591,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("XcodeCleaner")
                     .font(.largeTitle.bold())
-                Text("Sprint 8: Policy automation and guarded background cleanup")
+                Text("Sprint 9: History, trends, and report readiness")
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -864,6 +969,65 @@ struct ContentView: View {
             Text(viewModel.automationStatusMessage)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            if let allTime = viewModel.automationAllTimeSummary {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("All-time summary")
+                        .font(.subheadline.weight(.semibold))
+                    Text(
+                        "Runs: \(allTime.totalRuns) | Executed: \(allTime.executedRuns) | Skipped: \(allTime.skippedRuns) | Failed: \(allTime.failedRuns) | Reclaimed: \(formatBytes(allTime.totalReclaimedBytes))"
+                    )
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                }
+                .padding(8)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+            }
+
+            if !viewModel.automationTrendSummaries.isEmpty {
+                Text("Trends")
+                    .font(.subheadline.weight(.semibold))
+                ForEach(viewModel.automationTrendSummaries, id: \.windowDays) { summary in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Last \(summary.windowDays) day(s)")
+                            .font(.callout.weight(.medium))
+                        Text(
+                            "Runs: \(summary.totalRuns) | Executed: \(summary.executedRuns) | Skipped: \(summary.skippedRuns) | Failed: \(summary.failedRuns) | Reclaimed: \(formatBytes(summary.totalReclaimedBytes))"
+                        )
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                    }
+                    .padding(8)
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Report Export")
+                    .font(.subheadline.weight(.semibold))
+                HStack(spacing: 8) {
+                    Button("History JSON") {
+                        viewModel.exportAutomationHistoryJSON()
+                    }
+                    Button("History CSV") {
+                        viewModel.exportAutomationHistoryCSV()
+                    }
+                    Button("Trends JSON") {
+                        viewModel.exportAutomationTrendsJSON()
+                    }
+                    Button("Trends CSV") {
+                        viewModel.exportAutomationTrendsCSV()
+                    }
+                }
+                .disabled(viewModel.isExecuting || viewModel.isLoading)
+
+                if let exportPath = viewModel.automationLastExportPath {
+                    Text("Last export: \(exportPath)")
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+            }
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("Create Policy")
