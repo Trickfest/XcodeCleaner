@@ -272,6 +272,17 @@ public struct CleanupExecutor: @unchecked Sendable {
                 }
             }
             return nil
+        case .staleSimulatorRuntime:
+            if snapshot.runtimeTelemetry.totalSimulatorAppRunningInstances > 0
+                || snapshot.simulator.devices.contains(where: simulatorDeviceIsRunning) {
+                return "Blocked: close Simulator and shut down booted devices before deleting stale runtime artifacts."
+            }
+            return nil
+        case .staleDeviceSupport:
+            if snapshot.runtimeTelemetry.totalXcodeRunningInstances > 0 {
+                return "Blocked: close running Xcode instances before deleting stale Device Support artifacts."
+            }
+            return nil
         }
     }
 

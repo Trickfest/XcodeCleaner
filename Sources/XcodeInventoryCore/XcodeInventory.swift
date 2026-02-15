@@ -282,6 +282,8 @@ public enum DryRunItemKind: String, Codable, Sendable {
     case storageCategory
     case simulatorDevice
     case xcodeInstall
+    case staleSimulatorRuntime
+    case staleDeviceSupport
 }
 
 public struct DryRunPlanItem: Codable, Equatable, Identifiable, Sendable {
@@ -289,6 +291,8 @@ public struct DryRunPlanItem: Codable, Equatable, Identifiable, Sendable {
 
     public let kind: DryRunItemKind
     public let storageCategoryKind: StorageCategoryKind?
+    public let staleArtifactID: String?
+    public let staleArtifactKind: StaleArtifactKind?
     public let title: String
     public let reclaimableBytes: Int64
     public let paths: [String]
@@ -298,6 +302,8 @@ public struct DryRunPlanItem: Codable, Equatable, Identifiable, Sendable {
     public init(
         kind: DryRunItemKind,
         storageCategoryKind: StorageCategoryKind? = nil,
+        staleArtifactID: String? = nil,
+        staleArtifactKind: StaleArtifactKind? = nil,
         title: String,
         reclaimableBytes: Int64,
         paths: [String],
@@ -306,6 +312,8 @@ public struct DryRunPlanItem: Codable, Equatable, Identifiable, Sendable {
     ) {
         self.kind = kind
         self.storageCategoryKind = storageCategoryKind
+        self.staleArtifactID = staleArtifactID
+        self.staleArtifactKind = staleArtifactKind
         self.title = title
         self.reclaimableBytes = reclaimableBytes
         self.paths = paths
@@ -448,5 +456,91 @@ public struct CleanupExecutionReport: Codable, Equatable, Sendable {
         self.partiallySucceededCount = partiallySucceededCount
         self.blockedCount = blockedCount
         self.failedCount = failedCount
+    }
+}
+
+public enum StaleArtifactKind: String, Codable, Sendable {
+    case simulatorRuntime
+    case deviceSupportDirectory
+}
+
+public struct StaleArtifactCandidate: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public let kind: StaleArtifactKind
+    public let title: String
+    public let path: String
+    public let reclaimableBytes: Int64
+    public let reason: String
+    public let safetyClassification: SafetyClassification
+
+    public init(
+        id: String,
+        kind: StaleArtifactKind,
+        title: String,
+        path: String,
+        reclaimableBytes: Int64,
+        reason: String,
+        safetyClassification: SafetyClassification
+    ) {
+        self.id = id
+        self.kind = kind
+        self.title = title
+        self.path = path
+        self.reclaimableBytes = reclaimableBytes
+        self.reason = reason
+        self.safetyClassification = safetyClassification
+    }
+}
+
+public struct StaleArtifactReport: Codable, Equatable, Sendable {
+    public let generatedAt: Date
+    public let candidates: [StaleArtifactCandidate]
+    public let totalReclaimableBytes: Int64
+    public let notes: [String]
+
+    public init(
+        generatedAt: Date,
+        candidates: [StaleArtifactCandidate],
+        totalReclaimableBytes: Int64,
+        notes: [String]
+    ) {
+        self.generatedAt = generatedAt
+        self.candidates = candidates
+        self.totalReclaimableBytes = totalReclaimableBytes
+        self.notes = notes
+    }
+}
+
+public enum ActiveXcodeSwitchStatus: String, Codable, Sendable {
+    case succeeded
+    case blocked
+    case failed
+}
+
+public struct ActiveXcodeSwitchResult: Codable, Equatable, Sendable {
+    public let requestedInstallPath: String
+    public let requestedDeveloperDirectoryPath: String?
+    public let previousActiveDeveloperDirectoryPath: String?
+    public let newActiveDeveloperDirectoryPath: String?
+    public let status: ActiveXcodeSwitchStatus
+    public let message: String
+    public let recordedAt: Date
+
+    public init(
+        requestedInstallPath: String,
+        requestedDeveloperDirectoryPath: String?,
+        previousActiveDeveloperDirectoryPath: String?,
+        newActiveDeveloperDirectoryPath: String?,
+        status: ActiveXcodeSwitchStatus,
+        message: String,
+        recordedAt: Date
+    ) {
+        self.requestedInstallPath = requestedInstallPath
+        self.requestedDeveloperDirectoryPath = requestedDeveloperDirectoryPath
+        self.previousActiveDeveloperDirectoryPath = previousActiveDeveloperDirectoryPath
+        self.newActiveDeveloperDirectoryPath = newActiveDeveloperDirectoryPath
+        self.status = status
+        self.message = message
+        self.recordedAt = recordedAt
     }
 }

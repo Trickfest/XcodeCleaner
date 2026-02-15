@@ -67,6 +67,51 @@ struct XcodeCleanerCLIApp {
                         data = try encoder.encode(report)
                     }
                 }
+            } else if options.mode == .listStaleArtifacts {
+                let staleReport = StaleArtifactDetector().detect(snapshot: snapshot)
+                data = try encoder.encode(staleReport)
+            } else if options.mode == .cleanStaleArtifacts {
+                let staleReport = StaleArtifactDetector().detect(snapshot: snapshot)
+                let plan = StaleArtifactPlanner.makePlan(
+                    snapshot: snapshot,
+                    report: staleReport,
+                    selectedCandidateIDs: options.selectedStaleArtifactIDs,
+                    now: Date()
+                )
+                if options.skipIfToolsRunning,
+                   let skipReason = skipReasonForRunningTools(in: snapshot) {
+                    writeToStandardError("info: \(skipReason) Skipping stale cleanup due to --skip-if-tools-running.\n")
+                    let report = CleanupExecutionReport(
+                        executedAt: Date(),
+                        allowDirectDelete: options.allowDirectDelete,
+                        skippedReason: skipReason,
+                        selection: plan.selection,
+                        plan: plan,
+                        results: [],
+                        totalReclaimedBytes: 0,
+                        succeededCount: 0,
+                        partiallySucceededCount: 0,
+                        blockedCount: 0,
+                        failedCount: 0
+                    )
+                    data = try encoder.encode(report)
+                } else {
+                    let report = CleanupExecutor().execute(
+                        snapshot: snapshot,
+                        plan: plan,
+                        allowDirectDelete: options.allowDirectDelete
+                    )
+                    data = try encoder.encode(report)
+                }
+            } else if options.mode == .switchActiveXcode {
+                guard let switchPath = options.switchActiveXcodePath else {
+                    throw CLIOptionsError.missingValue("--switch-active-xcode")
+                }
+                let switchResult = ActiveXcodeSwitcher().switchActiveXcode(
+                    snapshot: snapshot,
+                    targetInstallPath: switchPath
+                )
+                data = try encoder.encode(switchResult)
             } else {
                 data = try encoder.encode(snapshot)
             }
@@ -114,13 +159,20 @@ func printUsage(toStandardError: Bool = false) {
     let categoryValues = StorageCategoryKind.allCases.map(\.rawValue).joined(separator: ", ")
     let usage = """
     Usage: xcodecleaner-cli [--no-progress] [--help] [--dry-run|--execute [--allow-direct-delete] [--skip-if-tools-running] [--plan-category <kind> ...] [--plan-simulator-device <udid> ...] [--plan-xcode-install <path> ...]]
+                           [--list-stale-artifacts]
+                           [--clean-stale-artifacts [--stale-artifact <id> ...] [--allow-direct-delete] [--skip-if-tools-running]]
+                           [--switch-active-xcode <path>]
 
     Options:
       --no-progress                  Suppress progress output
       --dry-run                      Output dry-run plan JSON instead of snapshot JSON
       --execute                      Execute selected plan and output execution report JSON
-      --allow-direct-delete          Allow direct delete fallback when move-to-trash fails (execute mode only)
-      --skip-if-tools-running        Skip execute when Xcode or Simulator is currently running
+      --list-stale-artifacts         Output stale runtime/device-support candidate JSON
+      --clean-stale-artifacts        Execute cleanup for stale artifacts (all by default)
+      --stale-artifact <id>          Include specific stale artifact candidate ID for cleanup
+      --switch-active-xcode <path>   Switch active Xcode to the selected install path
+      --allow-direct-delete          Allow direct delete fallback when move-to-trash fails (execute/clean-stale modes)
+      --skip-if-tools-running        Skip execute/clean-stale when Xcode or Simulator is currently running
       --plan-category <kind>         Include storage category in dry-run plan
       --plan-simulator-device <udid> Include simulator device (UDID) in dry-run plan
       --plan-xcode-install <path>    Include specific Xcode app bundle path in plan

@@ -26,17 +26,26 @@ final class InventoryViewModel: ObservableObject {
     @Published private(set) var isExecuting = false
     @Published private(set) var lastExecutionReport: CleanupExecutionReport?
     @Published private(set) var executionStatusMessage = "No cleanup executed yet."
+    @Published private(set) var staleArtifactReport: StaleArtifactReport?
+    @Published private(set) var lastXcodeSwitchResult: ActiveXcodeSwitchResult?
+    @Published private(set) var switchStatusMessage = "No active-Xcode switch executed yet."
 
     private let scanner: XcodeInventoryScanner
     private let cleanupExecutor: CleanupExecutor
+    private let staleArtifactDetector: StaleArtifactDetector
+    private let activeXcodeSwitcher: ActiveXcodeSwitcher
     private var activeScanID = UUID()
 
     init(
         scanner: XcodeInventoryScanner = XcodeInventoryScanner(),
-        cleanupExecutor: CleanupExecutor = CleanupExecutor()
+        cleanupExecutor: CleanupExecutor = CleanupExecutor(),
+        staleArtifactDetector: StaleArtifactDetector = StaleArtifactDetector(),
+        activeXcodeSwitcher: ActiveXcodeSwitcher = ActiveXcodeSwitcher()
     ) {
         self.scanner = scanner
         self.cleanupExecutor = cleanupExecutor
+        self.staleArtifactDetector = staleArtifactDetector
+        self.activeXcodeSwitcher = activeXcodeSwitcher
     }
 
     func loadIfNeeded() {
@@ -72,6 +81,7 @@ final class InventoryViewModel: ObservableObject {
                     return
                 }
                 self.snapshot = snapshot
+                self.staleArtifactReport = self.staleArtifactDetector.detect(snapshot: snapshot)
                 self.scanProgressFraction = 1
                 self.scanPhaseTitle = ScanPhase.finalizingSnapshot.title
                 self.scanMessage = "Scan complete"
@@ -111,6 +121,75 @@ final class InventoryViewModel: ObservableObject {
             }
         }
     }
+
+    func switchActiveXcode(targetInstallPath: String) {
+        guard let snapshot else {
+            switchStatusMessage = "No scan snapshot available to switch active Xcode."
+            return
+        }
+
+        switchStatusMessage = "Switching active Xcode..."
+        let switcher = activeXcodeSwitcher
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let result = switcher.switchActiveXcode(
+                snapshot: snapshot,
+                targetInstallPath: targetInstallPath
+            )
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self else {
+                    return
+                }
+                self.lastXcodeSwitchResult = result
+                self.switchStatusMessage = result.message
+                self.reload()
+            }
+        }
+    }
+
+    func executeStaleCleanup(selectedCandidateIDs: [String], allowDirectDelete: Bool) {
+        guard let snapshot else {
+            executionStatusMessage = "No scan snapshot available for stale cleanup."
+            return
+        }
+        guard !isExecuting else {
+            return
+        }
+
+        let staleReport = staleArtifactReport ?? staleArtifactDetector.detect(snapshot: snapshot)
+        let plan = StaleArtifactPlanner.makePlan(
+            snapshot: snapshot,
+            report: staleReport,
+            selectedCandidateIDs: selectedCandidateIDs,
+            now: Date()
+        )
+        guard !plan.items.isEmpty else {
+            executionStatusMessage = "No stale artifacts selected for cleanup."
+            return
+        }
+
+        isExecuting = true
+        executionStatusMessage = "Executing stale artifact cleanup..."
+        let executor = cleanupExecutor
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let report = executor.execute(
+                snapshot: snapshot,
+                plan: plan,
+                allowDirectDelete: allowDirectDelete
+            )
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self else {
+                    return
+                }
+                self.lastExecutionReport = report
+                self.executionStatusMessage = "Stale cleanup complete. Reclaimed \(ByteCountFormatter.string(fromByteCount: report.totalReclaimedBytes, countStyle: .file))."
+                self.isExecuting = false
+                self.reload()
+            }
+        }
+    }
 }
 
 struct ContentView: View {
@@ -119,6 +198,8 @@ struct ContentView: View {
     @State private var selectedSimulatorDeviceUDIDs: Set<String> = []
     @State private var selectedXcodeInstallPaths: Set<String> = []
     @State private var allowDirectDeleteFallback = false
+    @State private var selectedSwitchInstallPath: String = ""
+    @State private var selectedStaleArtifactIDs: Set<String> = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -145,7 +226,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("XcodeCleaner")
                     .font(.largeTitle.bold())
-                Text("Sprint 6: Safe execution + selective uninstall/delete")
+                Text("Sprint 7: Active Xcode switch + stale artifact management")
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -181,9 +262,140 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 16) {
                 runtimeTelemetryView(snapshot: snapshot)
                 storageOverviewView(snapshot: snapshot)
+                modificationToolsView(snapshot: snapshot)
                 dryRunPlannerView(snapshot: snapshot)
                 installInventoryView(snapshot: snapshot)
                 simulatorInventoryView(snapshot: snapshot)
+            }
+        }
+    }
+
+    private func modificationToolsView(snapshot: XcodeInventorySnapshot) -> some View {
+        let staleReport = viewModel.staleArtifactReport
+
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("Modification Tools")
+                .font(.headline)
+
+            Text("Active Xcode Switch")
+                .font(.subheadline.weight(.semibold))
+
+            if snapshot.installs.isEmpty {
+                Text("No Xcode installs available to switch.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Picker("Target Xcode", selection: $selectedSwitchInstallPath) {
+                    ForEach(snapshot.installs) { install in
+                        Text("\(install.displayName) (\(install.version ?? "Unknown"))").tag(install.path)
+                    }
+                }
+                .onAppear {
+                    if selectedSwitchInstallPath.isEmpty {
+                        selectedSwitchInstallPath = snapshot.installs.first(where: { !$0.isActive })?.path
+                            ?? snapshot.installs.first?.path
+                            ?? ""
+                    }
+                }
+
+                Button("Switch Active Xcode") {
+                    viewModel.switchActiveXcode(targetInstallPath: selectedSwitchInstallPath)
+                }
+                .disabled(selectedSwitchInstallPath.isEmpty || viewModel.isLoading || viewModel.isExecuting)
+
+                Text(viewModel.switchStatusMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if let switchResult = viewModel.lastXcodeSwitchResult {
+                    Text("Result: \(switchResult.status.rawValue) | New active: \(switchResult.newActiveDeveloperDirectoryPath ?? "Unknown")")
+                        .font(.caption.monospaced())
+                        .foregroundStyle(color(for: switchResult.status))
+                }
+            }
+
+            Divider()
+
+            Text("Stale Runtime / Device Support Candidates")
+                .font(.subheadline.weight(.semibold))
+
+            if let staleReport {
+                Text("Candidates: \(staleReport.candidates.count) | Estimated reclaim: \(formatBytes(staleReport.totalReclaimableBytes))")
+                    .font(.callout.monospacedDigit())
+                    .foregroundStyle(.secondary)
+
+                if staleReport.candidates.isEmpty {
+                    Text("No stale candidates detected.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(staleReport.candidates) { candidate in
+                        Toggle(
+                            isOn: Binding(
+                                get: { selectedStaleArtifactIDs.contains(candidate.id) },
+                                set: { isSelected in
+                                    if isSelected {
+                                        selectedStaleArtifactIDs.insert(candidate.id)
+                                    } else {
+                                        selectedStaleArtifactIDs.remove(candidate.id)
+                                    }
+                                }
+                            )
+                        ) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack {
+                                    Text(candidate.title)
+                                    Spacer()
+                                    Text(formatBytes(candidate.reclaimableBytes))
+                                        .font(.caption.monospacedDigit())
+                                        .foregroundStyle(.secondary)
+                                }
+                                Text("Kind: \(candidate.kind.rawValue), Safety: \(candidate.safetyClassification.rawValue)")
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(color(for: candidate.safetyClassification))
+                                Text(candidate.path)
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                                Text(candidate.reason)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+
+                HStack(spacing: 10) {
+                    Button("Clean Selected Stale Artifacts") {
+                        viewModel.executeStaleCleanup(
+                            selectedCandidateIDs: Array(selectedStaleArtifactIDs),
+                            allowDirectDelete: allowDirectDeleteFallback
+                        )
+                    }
+                    .disabled(staleReport.candidates.isEmpty || viewModel.isExecuting || viewModel.isLoading)
+
+                    Button("Select All") {
+                        selectedStaleArtifactIDs = Set(staleReport.candidates.map(\.id))
+                    }
+                    .disabled(staleReport.candidates.isEmpty)
+
+                    Button("Clear Selection") {
+                        selectedStaleArtifactIDs.removeAll()
+                    }
+                    .disabled(selectedStaleArtifactIDs.isEmpty)
+                }
+
+                if !staleReport.notes.isEmpty {
+                    ForEach(Array(staleReport.notes.enumerated()), id: \.offset) { _, note in
+                        Text(note)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } else {
+                Text("Stale artifact report not available yet.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -638,6 +850,17 @@ struct ContentView: View {
             return .orange
         case .blocked:
             return .yellow
+        case .failed:
+            return .red
+        }
+    }
+
+    private func color(for status: ActiveXcodeSwitchStatus) -> Color {
+        switch status {
+        case .succeeded:
+            return .green
+        case .blocked:
+            return .orange
         case .failed:
             return .red
         }

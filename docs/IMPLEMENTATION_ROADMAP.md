@@ -45,4 +45,4 @@ Each sprint must leave users with at least one new outcome they can realize imme
 - Better predictability.
 
 ## Immediate Next Action
-Sprint 6 is complete; next sprint is Sprint 7 for active Xcode switching and stale runtime/device-support management.
+Sprint 7 is complete; next sprint is Sprint 8 for automation policies with scheduled/manual runs and "only when Xcode/simulator closed" checks.

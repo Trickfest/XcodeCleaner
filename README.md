@@ -4,7 +4,7 @@ Native macOS tooling (Swift + SwiftUI) to inventory, understand, and clean Xcode
 
 ## Sprint Status
 
-Implemented through Sprint 6:
+Implemented through Sprint 7:
 - Read-only Xcode installation inventory scanner.
 - Active developer directory detection (`xcode-select -p`).
 - Read-only storage accounting for:
@@ -38,9 +38,15 @@ Implemented through Sprint 6:
 - Guardrails for active/running Xcode installs and booted/running simulator devices.
 - GUI execute flow with per-item success/blocked/failed feedback.
 - CLI execute mode via `--execute` with machine-readable execution report JSON.
+- Modification tools:
+- Active Xcode switching via `xcode-select` with verification/result reporting.
+- Stale artifact detection for simulator runtimes and Device Support directories.
+- GUI stale-artifact selection and cleanup execution.
+- CLI stale-artifact listing/cleanup modes via `--list-stale-artifacts` and `--clean-stale-artifacts`.
+- CLI active-Xcode switch mode via `--switch-active-xcode <path>`.
 - SwiftUI app shell showing inventory and storage totals.
 - CLI JSON output with inventory and storage models.
-- Unit tests for multi-Xcode discovery, storage categorization, telemetry, simulator itemization, progress phase ordering, dry-run planning, and cleanup execution guardrails.
+- Unit tests for multi-Xcode discovery, storage categorization, telemetry, simulator itemization, progress phase ordering, dry-run planning, cleanup execution guardrails, active-Xcode switching, and stale-artifact workflows.
 
 ## Quick Start
 

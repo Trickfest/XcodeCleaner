@@ -84,6 +84,44 @@ struct CLIProgressRendererTests {
         }
     }
 
+    @Test("CLI options parse list stale artifacts mode")
+    func parseListStaleArtifactsMode() throws {
+        let options = try CLIOptions.parse(arguments: ["--list-stale-artifacts"])
+        #expect(options.mode == .listStaleArtifacts)
+    }
+
+    @Test("CLI options parse clean stale artifacts mode")
+    func parseCleanStaleArtifactsMode() throws {
+        let options = try CLIOptions.parse(arguments: [
+            "--clean-stale-artifacts",
+            "--stale-artifact", "simulatorRuntime:/tmp/runtime.simruntime",
+            "--stale-artifact=deviceSupportDirectory:/tmp/DeviceSupport/15.0",
+            "--allow-direct-delete",
+            "--skip-if-tools-running",
+        ])
+        #expect(options.mode == .cleanStaleArtifacts)
+        #expect(options.allowDirectDelete == true)
+        #expect(options.skipIfToolsRunning == true)
+        #expect(options.selectedStaleArtifactIDs == [
+            "deviceSupportDirectory:/tmp/DeviceSupport/15.0",
+            "simulatorRuntime:/tmp/runtime.simruntime",
+        ])
+    }
+
+    @Test("stale-artifact selector requires clean-stale-artifacts mode")
+    func parseStaleArtifactSelectorRequiresMode() {
+        #expect(throws: CLIOptionsError.requiresCleanStaleArtifacts) {
+            try CLIOptions.parse(arguments: ["--stale-artifact", "id-1"])
+        }
+    }
+
+    @Test("switch-active-xcode parses as dedicated mode")
+    func parseSwitchActiveXcodeMode() throws {
+        let options = try CLIOptions.parse(arguments: ["--switch-active-xcode", "/Applications/Xcode.app"])
+        #expect(options.mode == .switchActiveXcode)
+        #expect(options.switchActiveXcodePath == "/Applications/Xcode.app")
+    }
+
     @Test("CLI options reject unknown argument")
     func parseUnknownOption() {
         #expect(throws: CLIOptionsError.self) {
