@@ -47,4 +47,4 @@ Each sprint must leave users with at least one new outcome they can realize imme
 - Better predictability.
 
 ## Immediate Next Action
-Sprint 9 is complete for source-first/reporting scope; Sprint 10 is next for UI cleanup/workflow organization and the deferred manual GUI smoke pass.
+Sprint 9 is complete for source-first/reporting scope; Sprint 10 is next for UI cleanup/workflow organization and the deferred manual GUI smoke pass (see `docs/SPRINT_10.md` for implementation order).
