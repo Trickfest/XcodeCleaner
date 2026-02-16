@@ -632,7 +632,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("XcodeCleaner")
                     .font(.largeTitle.bold())
-                Text("Sprint 10 Chunk 1: Navigation shell + section routing")
+                Text("Sprint 10 Chunk 2: Guided cleanup workflow")
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -725,7 +725,7 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Reports")
                 .font(.headline)
-            Text("Use this section to review generated execution history. Export controls remain in Automation for Chunk 1.")
+            Text("Use this section to review generated execution history. Export controls remain in Automation.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
