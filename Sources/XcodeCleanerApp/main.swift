@@ -632,7 +632,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("XcodeCleaner")
                     .font(.largeTitle.bold())
-                Text("Sprint 10 Chunk 2: Guided cleanup workflow")
+                Text("Sprint 10 Chunk 3: Automation section consolidation")
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -1095,134 +1095,100 @@ struct ContentView: View {
     }
 
     private func automationPoliciesView() -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Automation Policies")
-                    .font(.headline)
-                Spacer()
-                Button("Run Due Policies Now") {
-                    viewModel.runDueAutomationPoliciesNow()
+        let duePolicyCount = AutomationPolicies.duePolicies(
+            from: viewModel.automationPolicies,
+            now: Date()
+        ).count
+
+        return VStack(alignment: .leading, spacing: 12) {
+            Text("Automation Center")
+                .font(.headline)
+            Text("Manage policy lifecycle, execution, and reporting in one workflow-focused section.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            automationOperationsPanel(duePolicyCount: duePolicyCount)
+
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 12) {
+                    automationPolicyListPanel()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    automationPolicyCreatePanel()
+                        .frame(width: 360, alignment: .topLeading)
                 }
-                .disabled(viewModel.isExecuting || viewModel.isLoading)
+                VStack(alignment: .leading, spacing: 12) {
+                    automationPolicyListPanel()
+                    automationPolicyCreatePanel()
+                }
             }
+
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 12) {
+                    automationRunSummariesPanel()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    automationRecentRunsPanel()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                VStack(alignment: .leading, spacing: 12) {
+                    automationRunSummariesPanel()
+                    automationRecentRunsPanel()
+                }
+            }
+
+            automationExportsPanel()
+        }
+    }
+
+    private func automationOperationsPanel(duePolicyCount: Int) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Operations")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                if viewModel.isExecuting {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Running...")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            HStack(spacing: 8) {
+                Text("Policies: \(viewModel.automationPolicies.count)")
+                    .font(.caption.monospacedDigit())
+                Text("Due now: \(duePolicyCount)")
+                    .font(.caption.monospacedDigit())
+                Text("History loaded: \(viewModel.automationRunHistory.count)")
+                    .font(.caption.monospacedDigit())
+            }
+            .foregroundStyle(.secondary)
 
             Text(viewModel.automationStatusMessage)
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            if let allTime = viewModel.automationAllTimeSummary {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("All-time summary")
-                        .font(.subheadline.weight(.semibold))
-                    Text(
-                        "Runs: \(allTime.totalRuns) | Executed: \(allTime.executedRuns) | Skipped: \(allTime.skippedRuns) | Failed: \(allTime.failedRuns) | Reclaimed: \(formatBytes(allTime.totalReclaimedBytes))"
-                    )
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                }
-                .padding(8)
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
-            }
-
-            if !viewModel.automationTrendSummaries.isEmpty {
-                Text("Trends")
-                    .font(.subheadline.weight(.semibold))
-                ForEach(viewModel.automationTrendSummaries, id: \.windowDays) { summary in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Last \(summary.windowDays) day(s)")
-                            .font(.callout.weight(.medium))
-                        Text(
-                            "Runs: \(summary.totalRuns) | Executed: \(summary.executedRuns) | Skipped: \(summary.skippedRuns) | Failed: \(summary.failedRuns) | Reclaimed: \(formatBytes(summary.totalReclaimedBytes))"
-                        )
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                    }
-                    .padding(8)
-                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Report Export")
-                    .font(.subheadline.weight(.semibold))
-                HStack(spacing: 8) {
-                    Button("History JSON") {
-                        viewModel.exportAutomationHistoryJSON()
-                    }
-                    Button("History CSV") {
-                        viewModel.exportAutomationHistoryCSV()
-                    }
-                    Button("Trends JSON") {
-                        viewModel.exportAutomationTrendsJSON()
-                    }
-                    Button("Trends CSV") {
-                        viewModel.exportAutomationTrendsCSV()
-                    }
+            HStack(spacing: 8) {
+                Button("Run Due Policies Now") {
+                    viewModel.runDueAutomationPoliciesNow()
                 }
                 .disabled(viewModel.isExecuting || viewModel.isLoading)
 
-                if let exportPath = viewModel.automationLastExportPath {
-                    Text("Last export: \(exportPath)")
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Create Policy")
-                    .font(.subheadline.weight(.semibold))
-
-                TextField("Policy name", text: $newPolicyName)
-                    .textFieldStyle(.roundedBorder)
-
-                HStack(spacing: 8) {
-                    TextField("Every hours (blank = manual only)", text: $newPolicyEveryHours)
-                        .textFieldStyle(.roundedBorder)
-                    TextField("Min age days", text: $newPolicyMinAgeDays)
-                        .textFieldStyle(.roundedBorder)
-                    TextField("Min reclaim bytes", text: $newPolicyMinTotalBytes)
-                        .textFieldStyle(.roundedBorder)
-                }
-
-                Text("Categories")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                ForEach(StorageCategoryKind.allCases, id: \.rawValue) { kind in
-                    Toggle(
-                        isOn: Binding(
-                            get: { newPolicyCategoryKinds.contains(kind) },
-                            set: { isSelected in
-                                if isSelected {
-                                    newPolicyCategoryKinds.insert(kind)
-                                } else {
-                                    newPolicyCategoryKinds.remove(kind)
-                                }
-                            }
-                        )
-                    ) {
-                        Text(title(for: kind))
-                    }
-                }
-
-                Toggle("Skip if Xcode/Simulator is running", isOn: $newPolicySkipIfToolsRunning)
-                Toggle("Allow direct delete fallback", isOn: $newPolicyAllowDirectDelete)
-
-                if let automationFormError {
-                    Text(automationFormError)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                }
-
-                Button("Create Automation Policy") {
-                    createPolicyFromForm()
+                Button("Refresh Automation Data") {
+                    viewModel.loadAutomationState()
                 }
                 .disabled(viewModel.isExecuting || viewModel.isLoading)
             }
-            .padding(10)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+        }
+        .padding(10)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+    }
 
-            Text("Configured Policies: \(viewModel.automationPolicies.count)")
+    private func automationPolicyListPanel() -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Configured Policies (\(viewModel.automationPolicies.count))")
                 .font(.subheadline.weight(.semibold))
 
             if viewModel.automationPolicies.isEmpty {
@@ -1236,6 +1202,14 @@ struct ContentView: View {
                             Text(policy.name)
                                 .font(.callout.weight(.medium))
                             Spacer()
+                            if isAutomationPolicyDueNow(policy) {
+                                Text("DUE")
+                                    .font(.caption2.weight(.bold))
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 3)
+                                    .background(Color.orange.opacity(0.2))
+                                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                            }
                             Text(policy.isEnabled ? "ENABLED" : "DISABLED")
                                 .font(.caption2.weight(.bold))
                                 .padding(.horizontal, 6)
@@ -1247,12 +1221,15 @@ struct ContentView: View {
                         Text("Schedule: \(formattedSchedule(for: policy))")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+
                         Text("Categories: \(policy.selection.selectedCategoryKinds.map(title(for:)).joined(separator: ", "))")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+
                         Text("Skip if tools running: \(policy.skipIfToolsRunning ? "Yes" : "No"), Direct delete fallback: \(policy.allowDirectDelete ? "Yes" : "No")")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+
                         if let minAgeDays = policy.minAgeDays {
                             Text("Minimum age: \(minAgeDays) day(s)")
                                 .font(.caption)
@@ -1300,9 +1277,116 @@ struct ContentView: View {
                     .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
                 }
             }
+        }
+        .padding(10)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+    }
 
+    private func automationPolicyCreatePanel() -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Create Policy")
+                .font(.subheadline.weight(.semibold))
+
+            TextField("Policy name", text: $newPolicyName)
+                .textFieldStyle(.roundedBorder)
+
+            TextField("Every hours (blank = manual only)", text: $newPolicyEveryHours)
+                .textFieldStyle(.roundedBorder)
+            TextField("Min age days", text: $newPolicyMinAgeDays)
+                .textFieldStyle(.roundedBorder)
+            TextField("Min reclaim bytes", text: $newPolicyMinTotalBytes)
+                .textFieldStyle(.roundedBorder)
+
+            Text("Categories")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            ForEach(StorageCategoryKind.allCases, id: \.rawValue) { kind in
+                Toggle(
+                    isOn: Binding(
+                        get: { newPolicyCategoryKinds.contains(kind) },
+                        set: { isSelected in
+                            if isSelected {
+                                newPolicyCategoryKinds.insert(kind)
+                            } else {
+                                newPolicyCategoryKinds.remove(kind)
+                            }
+                        }
+                    )
+                ) {
+                    Text(title(for: kind))
+                }
+            }
+
+            Toggle("Skip if Xcode/Simulator is running", isOn: $newPolicySkipIfToolsRunning)
+            Toggle("Allow direct delete fallback", isOn: $newPolicyAllowDirectDelete)
+
+            if let automationFormError {
+                Text(automationFormError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+
+            Button("Create Automation Policy") {
+                createPolicyFromForm()
+            }
+            .disabled(viewModel.isExecuting || viewModel.isLoading)
+        }
+        .padding(10)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func automationRunSummariesPanel() -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Run Summaries")
+                .font(.subheadline.weight(.semibold))
+
+            if let allTime = viewModel.automationAllTimeSummary {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("All-time")
+                        .font(.callout.weight(.medium))
+                    Text(
+                        "Runs: \(allTime.totalRuns) | Executed: \(allTime.executedRuns) | Skipped: \(allTime.skippedRuns) | Failed: \(allTime.failedRuns) | Reclaimed: \(formatBytes(allTime.totalReclaimedBytes))"
+                    )
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                }
+                .padding(8)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+            } else {
+                Text("No all-time summary yet.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if viewModel.automationTrendSummaries.isEmpty {
+                Text("No trend windows available yet.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(viewModel.automationTrendSummaries, id: \.windowDays) { summary in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Last \(summary.windowDays) day(s)")
+                            .font(.callout.weight(.medium))
+                        Text(
+                            "Runs: \(summary.totalRuns) | Executed: \(summary.executedRuns) | Skipped: \(summary.skippedRuns) | Failed: \(summary.failedRuns) | Reclaimed: \(formatBytes(summary.totalReclaimedBytes))"
+                        )
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                    }
+                    .padding(8)
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                }
+            }
+        }
+        .padding(10)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func automationRecentRunsPanel() -> some View {
+        VStack(alignment: .leading, spacing: 8) {
             Text("Recent Runs")
                 .font(.subheadline.weight(.semibold))
+
             if viewModel.automationRunHistory.isEmpty {
                 Text("No automation run history yet.")
                     .font(.caption)
@@ -1333,6 +1417,43 @@ struct ContentView: View {
                 }
             }
         }
+        .padding(10)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func automationExportsPanel() -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Exports")
+                .font(.subheadline.weight(.semibold))
+            Text("Secondary controls for exporting automation history and trends.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 8) {
+                Button("History JSON") {
+                    viewModel.exportAutomationHistoryJSON()
+                }
+                Button("History CSV") {
+                    viewModel.exportAutomationHistoryCSV()
+                }
+                Button("Trends JSON") {
+                    viewModel.exportAutomationTrendsJSON()
+                }
+                Button("Trends CSV") {
+                    viewModel.exportAutomationTrendsCSV()
+                }
+            }
+            .disabled(viewModel.isExecuting || viewModel.isLoading)
+
+            if let exportPath = viewModel.automationLastExportPath {
+                Text("Last export: \(exportPath)")
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+        }
+        .padding(10)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
     }
 
     private func runtimeTelemetryView(snapshot: XcodeInventorySnapshot) -> some View {
@@ -1642,6 +1763,10 @@ struct ContentView: View {
         case .simulatorData:
             return "Simulator Data"
         }
+    }
+
+    private func isAutomationPolicyDueNow(_ policy: AutomationPolicy) -> Bool {
+        AutomationPolicies.duePolicies(from: [policy], now: Date()).isEmpty == false
     }
 
     private func formattedSchedule(for policy: AutomationPolicy) -> String {
