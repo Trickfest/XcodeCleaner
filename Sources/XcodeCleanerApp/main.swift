@@ -549,6 +549,46 @@ private func defaultAutomationStateDirectory() -> URL {
         .appendingPathComponent(".xcodecleaner", isDirectory: true)
 }
 
+private enum AppSection: String, CaseIterable, Identifiable {
+    case overview
+    case cleanup
+    case automation
+    case tools
+    case reports
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .overview:
+            return "Overview"
+        case .cleanup:
+            return "Cleanup"
+        case .automation:
+            return "Automation"
+        case .tools:
+            return "Tools"
+        case .reports:
+            return "Reports"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .overview:
+            return "gauge.with.dots.needle.50percent"
+        case .cleanup:
+            return "trash"
+        case .automation:
+            return "clock.arrow.circlepath"
+        case .tools:
+            return "wrench.and.screwdriver"
+        case .reports:
+            return "doc.text"
+        }
+    }
+}
+
 struct ContentView: View {
     @ObservedObject var viewModel: InventoryViewModel
     @State private var selectedCategoryKinds: Set<StorageCategoryKind> = Set(DryRunSelection.safeCategoryDefaults.selectedCategoryKinds)
@@ -565,25 +605,26 @@ struct ContentView: View {
     @State private var newPolicySkipIfToolsRunning = true
     @State private var newPolicyAllowDirectDelete = false
     @State private var automationFormError: String?
+    @State private var selectedSection: AppSection = .overview
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            header
-            Divider()
-            if viewModel.isLoading {
-                scanProgressView
-                if let snapshot = viewModel.snapshot {
-                    Divider()
-                    inventoryView(snapshot: snapshot)
-                }
-            } else if let snapshot = viewModel.snapshot {
-                inventoryView(snapshot: snapshot)
-            } else {
-                Text("No scan data yet.")
-                    .foregroundStyle(.secondary)
+        NavigationSplitView {
+            List(AppSection.allCases, selection: $selectedSection) { section in
+                Label(section.title, systemImage: section.symbol)
+                    .tag(section)
             }
+            .listStyle(.sidebar)
+            .navigationTitle("Sections")
+        } detail: {
+            VStack(alignment: .leading, spacing: 12) {
+                header
+                statusStrip
+                Divider()
+                sectionContent
+            }
+            .padding(20)
         }
-        .padding(20)
+        .navigationSplitViewStyle(.balanced)
     }
 
     private var header: some View {
@@ -591,7 +632,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("XcodeCleaner")
                     .font(.largeTitle.bold())
-                Text("Sprint 9: History, trends, and report readiness")
+                Text("Sprint 10 Chunk 1: Navigation shell + section routing")
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -599,6 +640,28 @@ struct ContentView: View {
                 viewModel.reload()
             }
             .keyboardShortcut("r", modifiers: [.command])
+        }
+    }
+
+    private var statusStrip: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(selectedSection.title)
+                    .font(.headline)
+                Spacer()
+                if let snapshot = viewModel.snapshot {
+                    Text("Last scan: \(formatDateTime(snapshot.scannedAt))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if viewModel.isLoading {
+                scanProgressView
+            } else {
+                Text("\(viewModel.scanPhaseTitle): \(viewModel.scanMessage)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -622,16 +685,58 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private func inventoryView(snapshot: XcodeInventorySnapshot) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                runtimeTelemetryView(snapshot: snapshot)
-                storageOverviewView(snapshot: snapshot)
-                modificationToolsView(snapshot: snapshot)
-                dryRunPlannerView(snapshot: snapshot)
-                automationPoliciesView()
-                installInventoryView(snapshot: snapshot)
-                simulatorInventoryView(snapshot: snapshot)
+    private var sectionContent: some View {
+        if let snapshot = viewModel.snapshot {
+            switch selectedSection {
+            case .overview:
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        runtimeTelemetryView(snapshot: snapshot)
+                        storageOverviewView(snapshot: snapshot)
+                        installInventoryView(snapshot: snapshot)
+                        simulatorInventoryView(snapshot: snapshot)
+                    }
+                }
+            case .cleanup:
+                ScrollView {
+                    dryRunPlannerView(snapshot: snapshot)
+                }
+            case .automation:
+                ScrollView {
+                    automationPoliciesView()
+                }
+            case .tools:
+                ScrollView {
+                    modificationToolsView(snapshot: snapshot)
+                }
+            case .reports:
+                ScrollView {
+                    reportsView()
+                }
+            }
+        } else if viewModel.isLoading {
+            Text("Scanning...")
+                .foregroundStyle(.secondary)
+        } else {
+            Text("No scan data yet.")
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func reportsView() -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Reports")
+                .font(.headline)
+            Text("Use this section to review generated execution history. Export controls remain in Automation for Chunk 1.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            if let report = viewModel.lastExecutionReport {
+                executionReportView(report)
+            } else {
+                Text("No cleanup execution report available yet.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
     }
