@@ -632,7 +632,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("XcodeCleaner")
                     .font(.largeTitle.bold())
-                Text("Sprint 10 Chunk 3: Automation section consolidation")
+                Text("Sprint 10 Chunks 4-5: Tools and reports consolidation")
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -722,12 +722,29 @@ struct ContentView: View {
     }
 
     private func reportsView() -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("Reports")
                 .font(.headline)
-            Text("Use this section to review generated execution history. Export controls remain in Automation.")
+            Text("Centralized history, trend summaries, and export actions for automation and cleanup runs.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            reportsStatusPanel()
+
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 12) {
+                    automationRunSummariesPanel(title: "Automation Trend Summaries")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    automationRecentRunsPanel(title: "Automation Run History", maxRows: 12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                VStack(alignment: .leading, spacing: 12) {
+                    automationRunSummariesPanel(title: "Automation Trend Summaries")
+                    automationRecentRunsPanel(title: "Automation Run History", maxRows: 12)
+                }
+            }
+
+            reportsExportsPanel()
 
             if let report = viewModel.lastExecutionReport {
                 executionReportView(report)
@@ -739,13 +756,80 @@ struct ContentView: View {
         }
     }
 
+    private func reportsStatusPanel() -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Report Status")
+                .font(.subheadline.weight(.semibold))
+            HStack(spacing: 8) {
+                Text("History loaded: \(viewModel.automationRunHistory.count)")
+                    .font(.caption.monospacedDigit())
+                Text("Trend windows: \(viewModel.automationTrendSummaries.count)")
+                    .font(.caption.monospacedDigit())
+                if let report = viewModel.lastExecutionReport {
+                    Text("Last cleanup reclaimed: \(formatBytes(report.totalReclaimedBytes))")
+                        .font(.caption.monospacedDigit())
+                }
+            }
+            .foregroundStyle(.secondary)
+
+            if let exportPath = viewModel.automationLastExportPath {
+                Text("Last export: \(exportPath)")
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            } else {
+                Text("No export has been generated in this session yet.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(10)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+    }
+
     private func modificationToolsView(snapshot: XcodeInventorySnapshot) -> some View {
-        let staleReport = viewModel.staleArtifactReport
-
-        return VStack(alignment: .leading, spacing: 10) {
-            Text("Modification Tools")
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Tools")
                 .font(.headline)
+            Text("Operational utilities for active-Xcode switching and stale artifact cleanup.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
 
+            toolsRuntimeSummaryPanel(snapshot: snapshot)
+
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 12) {
+                    activeXcodeSwitchPanel(snapshot: snapshot)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    staleArtifactManagementPanel()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                VStack(alignment: .leading, spacing: 12) {
+                    activeXcodeSwitchPanel(snapshot: snapshot)
+                    staleArtifactManagementPanel()
+                }
+            }
+        }
+    }
+
+    private func toolsRuntimeSummaryPanel(snapshot: XcodeInventorySnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Runtime Summary")
+                .font(.subheadline.weight(.semibold))
+            HStack(spacing: 10) {
+                Text("Running Xcode instances: \(snapshot.runtimeTelemetry.totalXcodeRunningInstances)")
+                Text("Running Simulator instances: \(snapshot.runtimeTelemetry.totalSimulatorAppRunningInstances)")
+                Text("Stale selected: \(selectedStaleArtifactIDs.count)")
+            }
+            .font(.caption.monospacedDigit())
+            .foregroundStyle(.secondary)
+        }
+        .padding(10)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func activeXcodeSwitchPanel(snapshot: XcodeInventorySnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
             Text("Active Xcode Switch")
                 .font(.subheadline.weight(.semibold))
 
@@ -756,7 +840,8 @@ struct ContentView: View {
             } else {
                 Picker("Target Xcode", selection: $selectedSwitchInstallPath) {
                     ForEach(snapshot.installs) { install in
-                        Text("\(install.displayName) (\(install.version ?? "Unknown"))").tag(install.path)
+                        Text("\(install.displayName) (\(install.version ?? "Unknown"), \(install.build ?? "Unknown"))")
+                            .tag(install.path)
                     }
                 }
                 .onAppear {
@@ -782,16 +867,25 @@ struct ContentView: View {
                         .foregroundStyle(color(for: switchResult.status))
                 }
             }
+        }
+        .padding(10)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+    }
 
-            Divider()
+    private func staleArtifactManagementPanel() -> some View {
+        let staleReport = viewModel.staleArtifactReport
 
-            Text("Stale Runtime / Device Support Candidates")
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("Stale Runtime / Device Support")
                 .font(.subheadline.weight(.semibold))
 
             if let staleReport {
-                Text("Candidates: \(staleReport.candidates.count) | Estimated reclaim: \(formatBytes(staleReport.totalReclaimableBytes))")
+                Text("Candidates: \(staleReport.candidates.count) | Selected: \(selectedStaleArtifactIDs.count) | Estimated reclaim: \(formatBytes(staleReport.totalReclaimableBytes))")
                     .font(.callout.monospacedDigit())
                     .foregroundStyle(.secondary)
+
+                Toggle("Allow direct delete fallback when move-to-trash fails", isOn: $allowDirectDeleteFallback)
+                    .font(.caption)
 
                 if staleReport.candidates.isEmpty {
                     Text("No stale candidates detected.")
@@ -841,7 +935,7 @@ struct ContentView: View {
                             allowDirectDelete: allowDirectDeleteFallback
                         )
                     }
-                    .disabled(staleReport.candidates.isEmpty || viewModel.isExecuting || viewModel.isLoading)
+                    .disabled(staleReport.candidates.isEmpty || selectedStaleArtifactIDs.isEmpty || viewModel.isExecuting || viewModel.isLoading)
 
                     Button("Select All") {
                         selectedStaleArtifactIDs = Set(staleReport.candidates.map(\.id))
@@ -867,6 +961,8 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .padding(10)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
     }
 
     private func cleanupWorkflowView(snapshot: XcodeInventorySnapshot) -> some View {
@@ -1122,20 +1218,7 @@ struct ContentView: View {
                 }
             }
 
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .top, spacing: 12) {
-                    automationRunSummariesPanel()
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    automationRecentRunsPanel()
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                VStack(alignment: .leading, spacing: 12) {
-                    automationRunSummariesPanel()
-                    automationRecentRunsPanel()
-                }
-            }
-
-            automationExportsPanel()
+            automationReportingShortcutPanel()
         }
     }
 
@@ -1335,9 +1418,25 @@ struct ContentView: View {
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
     }
 
-    private func automationRunSummariesPanel() -> some View {
+    private func automationReportingShortcutPanel() -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Run Summaries")
+            Text("Reporting and Exports")
+                .font(.subheadline.weight(.semibold))
+            Text("Run history, trend summaries, and export actions are now centralized in the Reports section.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Button("Open Reports Section") {
+                selectedSection = .reports
+            }
+            .disabled(selectedSection == .reports)
+        }
+        .padding(10)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func automationRunSummariesPanel(title: String = "Run Summaries") -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
                 .font(.subheadline.weight(.semibold))
 
             if let allTime = viewModel.automationAllTimeSummary {
@@ -1382,9 +1481,9 @@ struct ContentView: View {
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
     }
 
-    private func automationRecentRunsPanel() -> some View {
+    private func automationRecentRunsPanel(title: String = "Recent Runs", maxRows: Int = 8) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Recent Runs")
+            Text(title)
                 .font(.subheadline.weight(.semibold))
 
             if viewModel.automationRunHistory.isEmpty {
@@ -1392,7 +1491,7 @@ struct ContentView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(Array(viewModel.automationRunHistory.prefix(8))) { record in
+                ForEach(Array(viewModel.automationRunHistory.prefix(maxRows))) { record in
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
                             Text(record.policyName)
@@ -1405,12 +1504,16 @@ struct ContentView: View {
                                 .font(.caption.monospacedDigit())
                                 .foregroundStyle(.secondary)
                         }
-                        Text("Trigger: \(record.trigger.rawValue), Started: \(formatDateTime(record.startedAt)), Finished: \(formatDateTime(record.finishedAt))")
+                        Text("Trigger: \(record.trigger.rawValue)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("Started: \(formatDateTime(record.startedAt)) | Finished: \(formatDateTime(record.finishedAt))")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Text(record.message)
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(8)
                     .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
@@ -1421,11 +1524,11 @@ struct ContentView: View {
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
     }
 
-    private func automationExportsPanel() -> some View {
+    private func reportsExportsPanel() -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Exports")
+            Text("Export Actions")
                 .font(.subheadline.weight(.semibold))
-            Text("Secondary controls for exporting automation history and trends.")
+            Text("Export automation history and trend summaries in JSON or CSV.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
