@@ -24,6 +24,10 @@ Guidance for coding agents working in this repository.
 - Wait for user approval before committing.
 - If user asks to commit after each chunk, follow that exactly.
 
+## Commit Message Style
+- Do not prepend Conventional Commit prefixes (for example, `fix(app):`) unless the user explicitly asks for that format.
+- Use a concise plain-language subject line by default.
+
 ## Safety and Behavior Constraints
 - Preserve cleanup guardrails:
 - Protect active/running Xcode installs.
@@ -61,7 +65,7 @@ swift run --disable-sandbox XcodeCleanerApp
 - `Package.swift`: package/products/targets.
 - `Sources/XcodeInventoryCore/*`: scanner, models, planning, execution, automation core.
 - `Sources/XcodeCleanerCLI/*`: CLI modes, options, output/progress behavior.
-- `Sources/XcodeCleanerApp/main.swift`: SwiftUI app shell and section views (currently centralized).
+- `Sources/XcodeCleanerApp/XcodeCleanerApp.swift`: SwiftUI app shell and section views (currently centralized).
 - `docs/IMPLEMENTATION_ROADMAP.md`: sprint roadmap.
 - `docs/SPRINT_10.md`: current sprint chunk plan and acceptance criteria.
 
