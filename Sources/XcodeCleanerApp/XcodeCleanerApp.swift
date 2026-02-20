@@ -1019,6 +1019,9 @@ struct ContentView: View {
             selectedXcodeInstallPaths: Array(selectedXcodeInstallPaths)
         )
         let plan = DryRunPlanner.makePlan(snapshot: snapshot, selection: selection)
+        let simulatorRuntimeByIdentifier = Dictionary(
+            uniqueKeysWithValues: snapshot.simulator.runtimes.map { ($0.identifier, $0) }
+        )
 
         return VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center, spacing: 12) {
@@ -1084,6 +1087,12 @@ struct ContentView: View {
                                 .foregroundStyle(.secondary)
                         } else {
                             ForEach(snapshot.simulator.devices) { device in
+                                let runtime = simulatorRuntimeByIdentifier[device.runtimeIdentifier]
+                                let runtimeName = runtime?.name ?? device.runtimeName ?? device.runtimeIdentifier
+                                let runtimeVersion = runtime?.version ?? "Unknown"
+                                let stateLabel = device.runningInstanceCount > 0
+                                    ? "\(device.state) (running x\(device.runningInstanceCount))"
+                                    : device.state
                                 Toggle(
                                     isOn: Binding(
                                         get: { selectedSimulatorDeviceUDIDs.contains(device.udid) },
@@ -1097,7 +1106,29 @@ struct ContentView: View {
                                     )
                                 ) {
                                     HStack {
-                                        Text(device.name)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            HStack(spacing: 6) {
+                                                Text(device.name)
+                                                if device.runningInstanceCount > 0 {
+                                                    Text("RUNNING")
+                                                        .font(.caption2.weight(.bold))
+                                                        .padding(.horizontal, 5)
+                                                        .padding(.vertical, 2)
+                                                        .background(Color.orange.opacity(0.2))
+                                                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                                                }
+                                            }
+                                            Text("Runtime: \(runtimeName) | Version: \(runtimeVersion)")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                            Text("State: \(stateLabel) | Available: \(device.isAvailable ? "Yes" : "No")")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                            Text("UDID: \(device.udid)")
+                                                .font(.caption.monospaced())
+                                                .foregroundStyle(.secondary)
+                                                .textSelection(.enabled)
+                                        }
                                         Spacer()
                                         Text(formatBytes(device.sizeInBytes))
                                             .font(.callout.monospacedDigit())
