@@ -44,17 +44,40 @@ public struct CleanupExecutor: @unchecked Sendable {
     public func execute(
         snapshot: XcodeInventorySnapshot,
         selection: DryRunSelection,
-        allowDirectDelete: Bool = false
+        allowDirectDelete: Bool = false,
+        requireToolsStopped: Bool = false
     ) -> CleanupExecutionReport {
         let plan = DryRunPlanner.makePlan(snapshot: snapshot, selection: selection, now: now())
-        return execute(snapshot: snapshot, plan: plan, allowDirectDelete: allowDirectDelete)
+        return execute(
+            snapshot: snapshot,
+            plan: plan,
+            allowDirectDelete: allowDirectDelete,
+            requireToolsStopped: requireToolsStopped
+        )
     }
 
     public func execute(
         snapshot: XcodeInventorySnapshot,
         plan: DryRunPlan,
-        allowDirectDelete: Bool = false
+        allowDirectDelete: Bool = false,
+        requireToolsStopped: Bool = false
     ) -> CleanupExecutionReport {
+        if requireToolsStopped, let reason = runningToolsBlockReason(in: snapshot) {
+            return CleanupExecutionReport(
+                executedAt: now(),
+                allowDirectDelete: allowDirectDelete,
+                skippedReason: reason,
+                selection: plan.selection,
+                plan: plan,
+                results: [],
+                totalReclaimedBytes: 0,
+                succeededCount: 0,
+                partiallySucceededCount: 0,
+                blockedCount: 0,
+                failedCount: 0
+            )
+        }
+
         let allowlistedRoots = allowlistedRoots(from: snapshot)
         var results: [CleanupActionResult] = []
 
@@ -318,6 +341,18 @@ public struct CleanupExecutor: @unchecked Sendable {
         }
         let state = device.state.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return state == "booted" || state == "booting"
+    }
+
+    private func runningToolsBlockReason(in snapshot: XcodeInventorySnapshot) -> String? {
+        let runningXcode = snapshot.runtimeTelemetry.totalXcodeRunningInstances
+        let runningSimulatorApp = snapshot.runtimeTelemetry.totalSimulatorAppRunningInstances
+        let bootedDevices = snapshot.simulator.devices.filter(simulatorDeviceIsRunning).count
+
+        guard runningXcode > 0 || runningSimulatorApp > 0 || bootedDevices > 0 else {
+            return nil
+        }
+
+        return "Blocked: running tools detected (Xcode: \(runningXcode), Simulator app: \(runningSimulatorApp), booted devices: \(bootedDevices)). Close tools or disable 'Block cleanup while tools are running'."
     }
 
     private func normalize(path: String) -> String {

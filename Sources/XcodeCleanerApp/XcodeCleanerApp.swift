@@ -143,7 +143,7 @@ final class InventoryViewModel: ObservableObject {
         }
     }
 
-    func execute(selection: DryRunSelection, allowDirectDelete: Bool) {
+    func execute(selection: DryRunSelection, allowDirectDelete: Bool, requireToolsStopped: Bool) {
         guard let snapshot else {
             executionStatusMessage = "No scan snapshot available for cleanup execution."
             return
@@ -160,7 +160,8 @@ final class InventoryViewModel: ObservableObject {
             let report = executor.execute(
                 snapshot: snapshot,
                 selection: selection,
-                allowDirectDelete: allowDirectDelete
+                allowDirectDelete: allowDirectDelete,
+                requireToolsStopped: requireToolsStopped
             )
 
             DispatchQueue.main.async { [weak self] in
@@ -207,7 +208,11 @@ final class InventoryViewModel: ObservableObject {
         }
     }
 
-    func executeStaleCleanup(selectedCandidateIDs: [String], allowDirectDelete: Bool) {
+    func executeStaleCleanup(
+        selectedCandidateIDs: [String],
+        allowDirectDelete: Bool,
+        requireToolsStopped: Bool
+    ) {
         guard let snapshot else {
             executionStatusMessage = "No scan snapshot available for stale cleanup."
             return
@@ -236,7 +241,8 @@ final class InventoryViewModel: ObservableObject {
             let report = executor.execute(
                 snapshot: snapshot,
                 plan: plan,
-                allowDirectDelete: allowDirectDelete
+                allowDirectDelete: allowDirectDelete,
+                requireToolsStopped: requireToolsStopped
             )
 
             DispatchQueue.main.async { [weak self] in
@@ -622,6 +628,7 @@ struct ContentView: View {
     @State private var selectedSimulatorDeviceUDIDs: Set<String> = []
     @State private var selectedXcodeInstallPaths: Set<String> = []
     @State private var allowDirectDeleteFallback = false
+    @State private var blockCleanupWhileToolsRunning = true
     @State private var selectedSwitchInstallPath: String = ""
     @State private var selectedStaleArtifactIDs: Set<String> = []
     @State private var newPolicyName = ""
@@ -931,6 +938,8 @@ struct ContentView: View {
                     .font(.callout.monospacedDigit())
                     .foregroundStyle(.secondary)
 
+                Toggle("Block cleanup while Xcode/Simulator tools are running (recommended)", isOn: $blockCleanupWhileToolsRunning)
+                    .font(.caption)
                 Toggle("Allow direct delete fallback when move-to-trash fails", isOn: $allowDirectDeleteFallback)
                     .font(.caption)
 
@@ -979,7 +988,8 @@ struct ContentView: View {
                     Button("Clean Selected Stale Artifacts") {
                         viewModel.executeStaleCleanup(
                             selectedCandidateIDs: Array(selectedStaleArtifactIDs),
-                            allowDirectDelete: allowDirectDeleteFallback
+                            allowDirectDelete: allowDirectDeleteFallback,
+                            requireToolsStopped: blockCleanupWhileToolsRunning
                         )
                     }
                     .disabled(staleReport.candidates.isEmpty || selectedStaleArtifactIDs.isEmpty || viewModel.isExecuting || viewModel.isLoading)
@@ -1041,7 +1051,11 @@ struct ContentView: View {
                         .font(.title3.weight(.semibold))
                 }
                 Button("Execute Cleanup") {
-                    viewModel.execute(selection: selection, allowDirectDelete: allowDirectDeleteFallback)
+                    viewModel.execute(
+                        selection: selection,
+                        allowDirectDelete: allowDirectDeleteFallback,
+                        requireToolsStopped: blockCleanupWhileToolsRunning
+                    )
                 }
                 .disabled(plan.items.isEmpty || viewModel.isExecuting || viewModel.isLoading)
             }
@@ -1240,6 +1254,8 @@ struct ContentView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Step 3 - Execute Options and Status")
                             .font(.subheadline.weight(.semibold))
+                        Toggle("Block cleanup while Xcode/Simulator tools are running (recommended)", isOn: $blockCleanupWhileToolsRunning)
+                            .font(.callout)
                         Toggle("Allow direct delete fallback when move-to-trash fails", isOn: $allowDirectDeleteFallback)
                             .font(.callout)
 
@@ -1848,6 +1864,12 @@ struct ContentView: View {
             )
             .font(.callout.monospacedDigit())
             .foregroundStyle(.secondary)
+
+            if let skippedReason = report.skippedReason {
+                Text(skippedReason)
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
 
             ForEach(report.results) { result in
                 VStack(alignment: .leading, spacing: 4) {

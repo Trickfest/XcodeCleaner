@@ -111,6 +111,35 @@ struct CleanupExecutorTests {
         #expect(withFallbackReport.totalReclaimedBytes == 40)
         #expect(withFallbackReport.results.first?.operation == .directDelete)
     }
+
+    @Test("Cleanup executor can globally block cleanup when tools are running")
+    func executorGlobalRunningToolsBlock() {
+        let snapshot = makeExecutionSnapshot()
+        let selection = DryRunSelection(
+            selectedCategoryKinds: [.derivedData],
+            selectedSimulatorDeviceUDIDs: [],
+            selectedXcodeInstallPaths: []
+        )
+
+        let executor = CleanupExecutor(
+            fileOperator: StubCleanupFileOperator(existingPaths: ["/tmp/DerivedData"]),
+            pathSizer: StubExecutionPathSizer(sizeByPath: ["/tmp/DerivedData": 40]),
+            now: { Date(timeIntervalSince1970: 930) }
+        )
+
+        let report = executor.execute(
+            snapshot: snapshot,
+            selection: selection,
+            allowDirectDelete: false,
+            requireToolsStopped: true
+        )
+
+        #expect(report.skippedReason != nil)
+        #expect(report.results.isEmpty)
+        #expect(report.succeededCount == 0)
+        #expect(report.blockedCount == 0)
+        #expect(report.totalReclaimedBytes == 0)
+    }
 }
 
 private struct StubCleanupFileOperator: CleanupFileOperating {
