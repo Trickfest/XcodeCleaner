@@ -106,6 +106,21 @@ struct ModificationToolsTests {
         #expect(result.status == .blocked)
         #expect(result.message.contains("running"))
     }
+
+    @Test("Active Xcode switcher blocks when target install is already active")
+    func switchActiveXcodeBlockedWhenAlreadyActive() {
+        let snapshot = makeSwitchSnapshot(runningCount: 0)
+        let runner = StubSwitchCommandRunner(activeDeveloperDirectoryPath: "/Applications/Xcode-16.0.app/Contents/Developer")
+        let switcher = ActiveXcodeSwitcher(commandRunner: runner, now: { Date(timeIntervalSince1970: 50) })
+
+        let result = switcher.switchActiveXcode(
+            snapshot: snapshot,
+            targetInstallPath: "/Applications/Xcode-16.0.app"
+        )
+
+        #expect(result.status == .blocked)
+        #expect(result.message.contains("already active"))
+    }
 }
 
 private struct StubDirectoryLister: DirectoryListing {

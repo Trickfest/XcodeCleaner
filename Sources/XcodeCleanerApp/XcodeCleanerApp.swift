@@ -180,6 +180,13 @@ final class InventoryViewModel: ObservableObject {
             switchStatusMessage = "No scan snapshot available to switch active Xcode."
             return
         }
+        let normalizedTarget = URL(filePath: targetInstallPath).standardizedFileURL.resolvingSymlinksInPath().path
+        if let targetInstall = snapshot.installs.first(where: {
+            URL(filePath: $0.path).standardizedFileURL.resolvingSymlinksInPath().path == normalizedTarget
+        }), targetInstall.isActive {
+            switchStatusMessage = "Selected Xcode is already active. Choose a different install to switch."
+            return
+        }
 
         switchStatusMessage = "Switching active Xcode..."
         let switcher = activeXcodeSwitcher
@@ -849,7 +856,17 @@ struct ContentView: View {
     }
 
     private func activeXcodeSwitchPanel(snapshot: XcodeInventorySnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let hasAlternateInstall = snapshot.installs.contains(where: { !$0.isActive })
+        let selectedInstall = snapshot.installs.first(where: { $0.path == selectedSwitchInstallPath })
+        let selectedInstallIsActive = selectedInstall?.isActive ?? false
+        let switchActionEnabled =
+            hasAlternateInstall &&
+            !selectedSwitchInstallPath.isEmpty &&
+            !selectedInstallIsActive &&
+            !viewModel.isLoading &&
+            !viewModel.isExecuting
+
+        return VStack(alignment: .leading, spacing: 10) {
             Text("Active Xcode Switch")
                 .font(.subheadline.weight(.semibold))
 
@@ -875,7 +892,17 @@ struct ContentView: View {
                 Button("Switch Active Xcode") {
                     viewModel.switchActiveXcode(targetInstallPath: selectedSwitchInstallPath)
                 }
-                .disabled(selectedSwitchInstallPath.isEmpty || viewModel.isLoading || viewModel.isExecuting)
+                .disabled(!switchActionEnabled)
+
+                if !hasAlternateInstall {
+                    Text("No alternate Xcode installs found. Install another Xcode to enable switching.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if selectedInstallIsActive {
+                    Text("Selected Xcode is already active. Choose a different install to switch.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
 
                 Text(viewModel.switchStatusMessage)
                     .font(.caption)

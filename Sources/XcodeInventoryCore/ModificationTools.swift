@@ -243,6 +243,18 @@ public struct ActiveXcodeSwitcher: @unchecked Sendable {
             )
         }
 
+        if install.isActive {
+            return ActiveXcodeSwitchResult(
+                requestedInstallPath: normalizedTarget,
+                requestedDeveloperDirectoryPath: install.developerDirectoryPath,
+                previousActiveDeveloperDirectoryPath: previousActive,
+                newActiveDeveloperDirectoryPath: previousActive,
+                status: .blocked,
+                message: "Target Xcode install is already active.",
+                recordedAt: now()
+            )
+        }
+
         if install.runningInstanceCount > 0 {
             return ActiveXcodeSwitchResult(
                 requestedInstallPath: normalizedTarget,
