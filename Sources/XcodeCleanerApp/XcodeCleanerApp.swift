@@ -1032,254 +1032,278 @@ struct ContentView: View {
         let simulatorRuntimeByIdentifier = Dictionary(
             uniqueKeysWithValues: snapshot.simulator.runtimes.map { ($0.identifier, $0) }
         )
-
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Cleanup Workflow")
-                        .font(.headline)
-                    Text("Step 1: Select scope  ->  Step 2: Review plan  ->  Step 3: Execute")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text("Estimated reclaim")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(formatBytes(plan.totalReclaimableBytes))
-                        .font(.title3.weight(.semibold))
-                }
-                Button("Execute Cleanup") {
-                    viewModel.execute(
-                        selection: selection,
-                        allowDirectDelete: allowDirectDeleteFallback,
-                        requireToolsStopped: blockCleanupWhileToolsRunning
-                    )
-                }
-                .disabled(plan.items.isEmpty || viewModel.isExecuting || viewModel.isLoading)
+        let runningXcodeInstances = snapshot.runtimeTelemetry.totalXcodeRunningInstances
+        let runningSimulatorAppInstances = snapshot.runtimeTelemetry.totalSimulatorAppRunningInstances
+        let bootedSimulatorDeviceCount = snapshot.simulator.devices.filter { device in
+            if device.runningInstanceCount > 0 {
+                return true
             }
-            .padding(10)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+            let state = device.state.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return state == "booted" || state == "booting"
+        }.count
+        let runningToolsDetected =
+            runningXcodeInstances > 0 ||
+            runningSimulatorAppInstances > 0 ||
+            bootedSimulatorDeviceCount > 0
+        let executeBlockedByRunningTools = blockCleanupWhileToolsRunning && runningToolsDetected
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Step 1 - Select Cleanup Scope")
-                            .font(.subheadline.weight(.semibold))
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .center, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Cleanup Workflow")
+                                .font(.headline)
+                            Text("Review the planned cleanup and execute when ready. Adjust scope in the section below.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text("Estimated reclaim")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(formatBytes(plan.totalReclaimableBytes))
+                                .font(.title3.weight(.semibold))
+                            Text("Planned items: \(plan.items.count)")
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
+                    }
 
-                        Text("Categories")
-                            .font(.callout.weight(.medium))
-                        ForEach(snapshot.storage.categories) { category in
-                            Toggle(
-                                isOn: Binding(
-                                    get: { selectedCategoryKinds.contains(category.kind) },
-                                    set: { isSelected in
-                                        if isSelected {
-                                            selectedCategoryKinds.insert(category.kind)
-                                        } else {
-                                            selectedCategoryKinds.remove(category.kind)
-                                        }
-                                    }
-                                )
-                            ) {
+                    if !plan.notes.isEmpty {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Plan notes")
+                                .font(.callout.weight(.medium))
+                            ForEach(Array(plan.notes.enumerated()), id: \.offset) { _, note in
+                                Text(note)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+
+                    Text("Planned Items")
+                        .font(.subheadline.weight(.semibold))
+                    if plan.items.isEmpty {
+                        Text("No dry-run items selected.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(plan.items) { item in
+                            VStack(alignment: .leading, spacing: 4) {
                                 HStack {
-                                    Text(category.title)
+                                    Text(item.title)
+                                        .font(.callout.weight(.medium))
                                     Spacer()
-                                    Text(formatBytes(category.bytes))
+                                    Text(formatBytes(item.reclaimableBytes))
                                         .font(.callout.monospacedDigit())
                                         .foregroundStyle(.secondary)
                                 }
-                            }
-                        }
-
-                        Text("Simulator Devices")
-                            .font(.callout.weight(.medium))
-                        if snapshot.simulator.devices.isEmpty {
-                            Text("No simulator devices found in this scan.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        } else {
-                            ForEach(snapshot.simulator.devices) { device in
-                                let runtime = simulatorRuntimeByIdentifier[device.runtimeIdentifier]
-                                let runtimeName = runtime?.name ?? device.runtimeName ?? device.runtimeIdentifier
-                                let runtimeVersion = runtime?.version ?? "Unknown"
-                                let stateLabel = device.runningInstanceCount > 0
-                                    ? "\(device.state) (running x\(device.runningInstanceCount))"
-                                    : device.state
-                                Toggle(
-                                    isOn: Binding(
-                                        get: { selectedSimulatorDeviceUDIDs.contains(device.udid) },
-                                        set: { isSelected in
-                                            if isSelected {
-                                                selectedSimulatorDeviceUDIDs.insert(device.udid)
-                                            } else {
-                                                selectedSimulatorDeviceUDIDs.remove(device.udid)
-                                            }
-                                        }
-                                    )
-                                ) {
-                                    HStack {
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            HStack(spacing: 6) {
-                                                Text(device.name)
-                                                if device.runningInstanceCount > 0 {
-                                                    Text("RUNNING")
-                                                        .font(.caption2.weight(.bold))
-                                                        .padding(.horizontal, 5)
-                                                        .padding(.vertical, 2)
-                                                        .background(Color.orange.opacity(0.2))
-                                                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                                                }
-                                            }
-                                            Text("Runtime: \(runtimeName) | Version: \(runtimeVersion)")
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
-                                            Text("State: \(stateLabel) | Available: \(device.isAvailable ? "Yes" : "No")")
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
-                                            Text("UDID: \(device.udid)")
-                                                .font(.caption.monospaced())
-                                                .foregroundStyle(.secondary)
-                                                .textSelection(.enabled)
-                                        }
-                                        Spacer()
-                                        Text(formatBytes(device.sizeInBytes))
-                                            .font(.callout.monospacedDigit())
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                            }
-                        }
-
-                        Text("Xcode Installs")
-                            .font(.callout.weight(.medium))
-                        if snapshot.installs.isEmpty {
-                            Text("No Xcode installs found in this scan.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        } else {
-                            ForEach(snapshot.installs) { install in
-                                Toggle(
-                                    isOn: Binding(
-                                        get: { selectedXcodeInstallPaths.contains(install.path) },
-                                        set: { isSelected in
-                                            if isSelected {
-                                                selectedXcodeInstallPaths.insert(install.path)
-                                            } else {
-                                                selectedXcodeInstallPaths.remove(install.path)
-                                            }
-                                        }
-                                    )
-                                ) {
-                                    HStack {
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(install.displayName)
-                                            Text("Version: \(install.version ?? "Unknown"), Build: \(install.build ?? "Unknown")")
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
-                                            Text(install.path)
-                                                .font(.caption.monospaced())
-                                                .foregroundStyle(.secondary)
-                                                .lineLimit(2)
-                                                .textSelection(.enabled)
-                                        }
-                                        Spacer()
-                                        Text(formatBytes(install.sizeInBytes))
-                                            .font(.callout.monospacedDigit())
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    .padding(10)
-                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
-
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Step 2 - Review Dry-Run Plan")
-                            .font(.subheadline.weight(.semibold))
-                        Text("Planned items: \(plan.items.count)")
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
-
-                        if !plan.notes.isEmpty {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Plan notes")
-                                    .font(.callout.weight(.medium))
-                                ForEach(Array(plan.notes.enumerated()), id: \.offset) { _, note in
-                                    Text(note)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-
-                        if plan.items.isEmpty {
-                            Text("No dry-run items selected.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        } else {
-                            ForEach(plan.items) { item in
-                                VStack(alignment: .leading, spacing: 4) {
-                                    HStack {
-                                        Text(item.title)
-                                            .font(.callout.weight(.medium))
-                                        Spacer()
-                                        Text(formatBytes(item.reclaimableBytes))
-                                            .font(.callout.monospacedDigit())
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    Text("Kind: \(item.kind.rawValue), Safety: \(item.safetyClassification.rawValue)\(item.storageCategoryKind.map { ", Category: \($0.rawValue)" } ?? "")")
+                                Text("Kind: \(item.kind.rawValue), Safety: \(item.safetyClassification.rawValue)\(item.storageCategoryKind.map { ", Category: \($0.rawValue)" } ?? "")")
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(color(for: item.safetyClassification))
+                                Text("Ownership: \(item.ownershipSummary)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                if !item.paths.isEmpty {
+                                    Text(item.paths.joined(separator: "\n"))
                                         .font(.caption.monospaced())
-                                        .foregroundStyle(color(for: item.safetyClassification))
-                                    Text("Ownership: \(item.ownershipSummary)")
-                                        .font(.caption)
                                         .foregroundStyle(.secondary)
-                                    if !item.paths.isEmpty {
-                                        Text(item.paths.joined(separator: "\n"))
-                                            .font(.caption.monospaced())
-                                            .foregroundStyle(.secondary)
-                                            .textSelection(.enabled)
-                                    }
+                                        .textSelection(.enabled)
                                 }
-                                .padding(8)
-                                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
                             }
+                            .padding(8)
+                            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
                         }
                     }
-                    .padding(10)
-                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+
+                    Divider()
 
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Step 3 - Execute Options and Status")
+                        Text("Execute Options and Status")
                             .font(.subheadline.weight(.semibold))
                         Toggle("Block cleanup while Xcode/Simulator tools are running (recommended)", isOn: $blockCleanupWhileToolsRunning)
                             .font(.callout)
                         Toggle("Allow direct delete fallback when move-to-trash fails", isOn: $allowDirectDeleteFallback)
                             .font(.callout)
 
-                        if viewModel.isExecuting {
-                            HStack(spacing: 8) {
-                                ProgressView()
-                                    .controlSize(.small)
-                                Text("Executing cleanup...")
+                        HStack(spacing: 10) {
+                            Button("Execute Cleanup") {
+                                viewModel.execute(
+                                    selection: selection,
+                                    allowDirectDelete: allowDirectDeleteFallback,
+                                    requireToolsStopped: blockCleanupWhileToolsRunning
+                                )
+                            }
+                            .disabled(
+                                plan.items.isEmpty ||
+                                viewModel.isExecuting ||
+                                viewModel.isLoading ||
+                                executeBlockedByRunningTools
+                            )
+
+                            if viewModel.isExecuting {
+                                HStack(spacing: 8) {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                    Text("Executing cleanup...")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            } else if executeBlockedByRunningTools {
+                                Text("Cleanup is blocked while tools are running (Xcode: \(runningXcodeInstances), Simulator app: \(runningSimulatorAppInstances), booted devices: \(bootedSimulatorDeviceCount)). Close tools or disable the block option.")
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                            } else {
+                                Text(viewModel.executionStatusMessage)
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
-                        } else {
-                            Text(viewModel.executionStatusMessage)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
                         }
                     }
-                    .padding(10)
-                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
 
                     if let report = viewModel.lastExecutionReport {
                         executionReportView(report)
                     }
                 }
+                .padding(10)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Select Cleanup Scope")
+                        .font(.subheadline.weight(.semibold))
+
+                    Text("Categories")
+                        .font(.callout.weight(.medium))
+                    Text("Xcode app uninstall is managed in the Xcode Installs section below.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ForEach(snapshot.storage.categories.filter { $0.kind != .xcodeApplications }) { category in
+                        Toggle(
+                            isOn: Binding(
+                                get: { selectedCategoryKinds.contains(category.kind) },
+                                set: { isSelected in
+                                    if isSelected {
+                                        selectedCategoryKinds.insert(category.kind)
+                                    } else {
+                                        selectedCategoryKinds.remove(category.kind)
+                                    }
+                                }
+                            )
+                        ) {
+                            HStack {
+                                Text(category.title)
+                                Spacer()
+                                Text(formatBytes(category.bytes))
+                                    .font(.callout.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+
+                    Text("Simulator Devices")
+                        .font(.callout.weight(.medium))
+                    if snapshot.simulator.devices.isEmpty {
+                        Text("No simulator devices found in this scan.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(snapshot.simulator.devices) { device in
+                            let runtime = simulatorRuntimeByIdentifier[device.runtimeIdentifier]
+                            let runtimeName = runtime?.name ?? device.runtimeName ?? device.runtimeIdentifier
+                            let runtimeVersion = runtime?.version ?? "Unknown"
+                            let stateLabel = device.runningInstanceCount > 0
+                                ? "\(device.state) (running x\(device.runningInstanceCount))"
+                                : device.state
+                            Toggle(
+                                isOn: Binding(
+                                    get: { selectedSimulatorDeviceUDIDs.contains(device.udid) },
+                                    set: { isSelected in
+                                        if isSelected {
+                                            selectedSimulatorDeviceUDIDs.insert(device.udid)
+                                        } else {
+                                            selectedSimulatorDeviceUDIDs.remove(device.udid)
+                                        }
+                                    }
+                                )
+                            ) {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        HStack(spacing: 6) {
+                                            Text(device.name)
+                                            if device.runningInstanceCount > 0 {
+                                                Text("RUNNING")
+                                                    .font(.caption2.weight(.bold))
+                                                    .padding(.horizontal, 5)
+                                                    .padding(.vertical, 2)
+                                                    .background(Color.orange.opacity(0.2))
+                                                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                                            }
+                                        }
+                                        Text("Runtime: \(runtimeName) | Version: \(runtimeVersion)")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                        Text("State: \(stateLabel) | Available: \(device.isAvailable ? "Yes" : "No")")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                        Text("UDID: \(device.udid)")
+                                            .font(.caption.monospaced())
+                                            .foregroundStyle(.secondary)
+                                            .textSelection(.enabled)
+                                    }
+                                    Spacer()
+                                    Text(formatBytes(device.sizeInBytes))
+                                        .font(.callout.monospacedDigit())
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+
+                    Text("Xcode Installs")
+                        .font(.callout.weight(.medium))
+                    if snapshot.installs.isEmpty {
+                        Text("No Xcode installs found in this scan.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(snapshot.installs) { install in
+                            Toggle(
+                                isOn: Binding(
+                                    get: { selectedXcodeInstallPaths.contains(install.path) },
+                                    set: { isSelected in
+                                        if isSelected {
+                                            selectedXcodeInstallPaths.insert(install.path)
+                                        } else {
+                                            selectedXcodeInstallPaths.remove(install.path)
+                                        }
+                                    }
+                                )
+                            ) {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(install.displayName)
+                                        Text("Version: \(install.version ?? "Unknown"), Build: \(install.build ?? "Unknown")")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                        Text(install.path)
+                                            .font(.caption.monospaced())
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(2)
+                                            .textSelection(.enabled)
+                                    }
+                                    Spacer()
+                                    Text(formatBytes(install.sizeInBytes))
+                                        .font(.callout.monospacedDigit())
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(10)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
             }
         }
     }
