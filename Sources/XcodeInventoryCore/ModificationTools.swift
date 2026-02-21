@@ -48,13 +48,15 @@ public struct StaleArtifactDetector: @unchecked Sendable {
         var notes: [String] = []
         var candidates: [StaleArtifactCandidate] = []
 
-        let runtimeIDsInUse = Set(snapshot.simulator.devices.map(\.runtimeIdentifier))
         for runtime in snapshot.simulator.runtimes {
             guard let bundlePath = runtime.bundlePath else {
                 continue
             }
-            let isStale = !runtime.isAvailable || !runtimeIDsInUse.contains(runtime.identifier)
-            guard isStale else {
+            let staleReasons = SimulatorStaleness.runtimeStaleReasons(
+                for: runtime,
+                devices: snapshot.simulator.devices
+            )
+            guard !staleReasons.isEmpty else {
                 continue
             }
             let normalizedPath = normalize(path: bundlePath)
@@ -65,9 +67,9 @@ public struct StaleArtifactDetector: @unchecked Sendable {
                     title: "Stale Simulator Runtime: \(runtime.name)",
                     path: normalizedPath,
                     reclaimableBytes: runtime.sizeInBytes,
-                    reason: runtime.isAvailable
-                        ? "Runtime is not referenced by any current simulator device."
-                        : "Runtime is unavailable and can usually be removed safely.",
+                    reason: staleReasons.contains(.unavailable)
+                        ? "Runtime is unavailable and can usually be removed safely."
+                        : "Runtime is not referenced by any current simulator device.",
                     safetyClassification: .conditionallySafe
                 )
             )
