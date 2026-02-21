@@ -319,6 +319,26 @@ struct XcodeInventoryScannerTests {
         #expect(plan.notes.contains(where: { $0.contains("double counting") }))
         #expect(plan.selection.selectedCategoryKinds.isEmpty)
     }
+
+    @Test("Dry-run planner supports per-runtime simulator selection and avoids aggregate double counting")
+    func dryRunPlannerRuntimeOverlapGuard() {
+        let snapshot = makePlanningSnapshot()
+        let selection = DryRunSelection(
+            selectedCategoryKinds: [.simulatorData],
+            selectedSimulatorDeviceUDIDs: [],
+            selectedSimulatorRuntimeIdentifiers: ["runtime-1"]
+        )
+
+        let plan = DryRunPlanner.makePlan(snapshot: snapshot, selection: selection)
+
+        #expect(plan.items.count == 1)
+        #expect(plan.items[0].kind == .simulatorRuntime)
+        #expect(plan.items[0].paths == ["/tmp/CoreSimulator/Profiles/Runtimes/iOS-18.simruntime"])
+        #expect(plan.items[0].reclaimableBytes == 16_384)
+        #expect(plan.totalReclaimableBytes == 16_384)
+        #expect(plan.notes.contains(where: { $0.contains("double counting") }))
+        #expect(plan.selection.selectedCategoryKinds.isEmpty)
+    }
 }
 
 private struct StubDiscoverer: XcodeApplicationDiscovering {
@@ -484,7 +504,18 @@ private func makePlanningSnapshot() -> XcodeInventorySnapshot {
                 safetyClassification: .conditionallySafe
             ),
         ],
-        runtimes: []
+        runtimes: [
+            SimulatorRuntimeRecord(
+                identifier: "runtime-1",
+                name: "iOS 18.0",
+                version: "18.0",
+                isAvailable: true,
+                bundlePath: "/tmp/CoreSimulator/Profiles/Runtimes/iOS-18.simruntime",
+                sizeInBytes: 16_384,
+                ownershipSummary: "Owned by CoreSimulator runtime files",
+                safetyClassification: .conditionallySafe
+            )
+        ]
     )
 
     return XcodeInventorySnapshot(

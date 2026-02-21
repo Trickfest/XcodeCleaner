@@ -284,6 +284,12 @@ public struct CleanupExecutor: @unchecked Sendable {
                 }
             }
             return nil
+        case .simulatorRuntime:
+            if snapshot.runtimeTelemetry.totalSimulatorAppRunningInstances > 0
+                || snapshot.simulator.devices.contains(where: simulatorDeviceIsRunning) {
+                return "Blocked: close Simulator and shut down booted devices before deleting simulator runtimes."
+            }
+            return nil
         case .xcodeInstall:
             let selectedPaths = Set(item.paths.map(normalize(path:)))
             if let install = snapshot.installs.first(where: { selectedPaths.contains(normalize(path: $0.path)) }) {

@@ -9,13 +9,15 @@ public enum DryRunPlanner {
         var notes: [String] = []
         var selectedKinds = Set(selection.selectedCategoryKinds)
         let selectedDeviceUDIDs = Set(selection.selectedSimulatorDeviceUDIDs)
+        let selectedRuntimeIdentifiers = Set(selection.selectedSimulatorRuntimeIdentifiers)
         let selectedInstallPaths = Set(selection.selectedXcodeInstallPaths.map(normalize(path:)))
 
         // Prevent inaccurate double counting when users select both aggregate simulator data
         // and specific simulator devices in one plan.
-        if selectedKinds.contains(.simulatorData), !selectedDeviceUDIDs.isEmpty {
+        if selectedKinds.contains(.simulatorData),
+           !selectedDeviceUDIDs.isEmpty || !selectedRuntimeIdentifiers.isEmpty {
             selectedKinds.remove(.simulatorData)
-            notes.append("Removed aggregate Simulator Data category to avoid double counting with selected simulator devices.")
+            notes.append("Removed aggregate Simulator Data category to avoid double counting with selected simulator devices/runtimes.")
         }
         if selectedKinds.contains(.xcodeApplications), !selectedInstallPaths.isEmpty {
             selectedKinds.remove(.xcodeApplications)
@@ -57,6 +59,32 @@ public enum DryRunPlanner {
                     paths: [device.dataPath],
                     ownershipSummary: device.ownershipSummary,
                     safetyClassification: device.safetyClassification
+                )
+            )
+        }
+
+        let runtimesByIdentifier = Dictionary(
+            uniqueKeysWithValues: snapshot.simulator.runtimes.map { ($0.identifier, $0) }
+        )
+        for runtimeIdentifier in selectedRuntimeIdentifiers.sorted() {
+            guard let runtime = runtimesByIdentifier[runtimeIdentifier] else {
+                notes.append("Selected simulator runtime \(runtimeIdentifier) was not found in the current scan snapshot.")
+                continue
+            }
+            guard let bundlePath = runtime.bundlePath else {
+                notes.append("Selected simulator runtime \(runtime.name) (\(runtime.identifier)) has no bundle path in the current scan snapshot.")
+                continue
+            }
+
+            let versionPart = runtime.version.map { " \($0)" } ?? ""
+            items.append(
+                DryRunPlanItem(
+                    kind: .simulatorRuntime,
+                    title: "Simulator Runtime: \(runtime.name)\(versionPart)",
+                    reclaimableBytes: runtime.sizeInBytes,
+                    paths: [bundlePath],
+                    ownershipSummary: runtime.ownershipSummary,
+                    safetyClassification: runtime.safetyClassification
                 )
             )
         }
@@ -105,6 +133,7 @@ public enum DryRunPlanner {
             selection: DryRunSelection(
                 selectedCategoryKinds: Array(selectedKinds).sorted { $0.rawValue < $1.rawValue },
                 selectedSimulatorDeviceUDIDs: selection.selectedSimulatorDeviceUDIDs,
+                selectedSimulatorRuntimeIdentifiers: Array(selectedRuntimeIdentifiers).sorted(),
                 selectedXcodeInstallPaths: Array(selectedInstallPaths)
             ),
             items: items,

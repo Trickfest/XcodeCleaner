@@ -140,6 +140,37 @@ struct CleanupExecutorTests {
         #expect(report.blockedCount == 0)
         #expect(report.totalReclaimedBytes == 0)
     }
+
+    @Test("Cleanup executor blocks per-runtime simulator cleanup when simulator tools are running")
+    func executorBlocksRunningSimulatorRuntimeCleanup() {
+        let snapshot = makeExecutionSnapshot()
+        let selection = DryRunSelection(
+            selectedCategoryKinds: [],
+            selectedSimulatorDeviceUDIDs: [],
+            selectedSimulatorRuntimeIdentifiers: ["runtime-1"],
+            selectedXcodeInstallPaths: []
+        )
+
+        let executor = CleanupExecutor(
+            fileOperator: StubCleanupFileOperator(
+                existingPaths: ["/tmp/CoreSimulator/Profiles/Runtimes/iOS-19.simruntime"]
+            ),
+            pathSizer: StubExecutionPathSizer(
+                sizeByPath: ["/tmp/CoreSimulator/Profiles/Runtimes/iOS-19.simruntime": 70]
+            ),
+            now: { Date(timeIntervalSince1970: 940) }
+        )
+
+        let report = executor.execute(snapshot: snapshot, selection: selection, allowDirectDelete: false)
+
+        #expect(report.results.count == 1)
+        #expect(report.blockedCount == 1)
+        #expect(report.succeededCount == 0)
+        #expect(report.results.first?.item.kind == .simulatorRuntime)
+        #expect(report.results.first?.status == .blocked)
+        #expect(report.totalReclaimedBytes == 0)
+    }
+
 }
 
 private struct StubCleanupFileOperator: CleanupFileOperating {
@@ -286,7 +317,18 @@ private func makeExecutionSnapshot() -> XcodeInventorySnapshot {
                 safetyClassification: .conditionallySafe
             ),
         ],
-        runtimes: []
+        runtimes: [
+            SimulatorRuntimeRecord(
+                identifier: "runtime-1",
+                name: "iOS 19.0",
+                version: "19.0",
+                isAvailable: true,
+                bundlePath: "/tmp/CoreSimulator/Profiles/Runtimes/iOS-19.simruntime",
+                sizeInBytes: 70,
+                ownershipSummary: "Owned by CoreSimulator runtime files",
+                safetyClassification: .conditionallySafe
+            ),
+        ]
     )
 
     return XcodeInventorySnapshot(
