@@ -1194,6 +1194,10 @@ struct ContentView: View {
                         ) {
                             HStack {
                                 Text(category.title)
+                                Text(cleanupCategoryHelpText(for: category.kind))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
                                 Spacer()
                                 Text(formatBytes(category.bytes))
                                     .font(.callout.monospacedDigit())
@@ -1202,8 +1206,13 @@ struct ContentView: View {
                         }
                     }
 
-                    Text("Simulator Devices")
-                        .font(.callout.weight(.medium))
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("Simulator Devices")
+                            .font(.callout.weight(.medium))
+                        Text("Deletes selected device data only (apps/files/state), not simulator runtimes or caches.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     if snapshot.simulator.devices.isEmpty {
                         Text("No simulator devices found in this scan.")
                             .font(.caption)
@@ -1989,6 +1998,21 @@ struct ContentView: View {
             return "Device Support"
         case .simulatorData:
             return "Simulator Data"
+        }
+    }
+
+    private func cleanupCategoryHelpText(for kind: StorageCategoryKind) -> String {
+        switch kind {
+        case .xcodeApplications:
+            return "Xcode app bundles"
+        case .derivedData:
+            return "Build products and indexes"
+        case .archives:
+            return "Archived app builds"
+        case .deviceSupport:
+            return "Physical-device support files"
+        case .simulatorData:
+            return "CoreSimulator devices/caches/runtimes"
         }
     }
 
