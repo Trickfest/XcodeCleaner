@@ -272,7 +272,7 @@ public struct CleanupExecutor: @unchecked Sendable {
                     || snapshot.simulator.devices.contains(where: simulatorDeviceIsRunning) {
                     return "Blocked: simulator data cleanup requires Simulator app and booted devices to be stopped."
                 }
-            case .derivedData, .archives, .deviceSupport:
+            case .derivedData, .mobileDeviceCrashLogs, .archives, .deviceSupport:
                 break
             }
             return nil

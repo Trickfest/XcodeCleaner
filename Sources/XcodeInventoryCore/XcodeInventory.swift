@@ -92,6 +92,7 @@ public struct XcodeInstall: Codable, Equatable, Identifiable, Sendable {
 public enum StorageCategoryKind: String, Codable, CaseIterable, Sendable {
     case xcodeApplications
     case derivedData
+    case mobileDeviceCrashLogs
     case archives
     case deviceSupport
     case simulatorData

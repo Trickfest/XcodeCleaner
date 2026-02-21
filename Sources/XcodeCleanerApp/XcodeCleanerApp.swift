@@ -2049,6 +2049,8 @@ struct ContentView: View {
             return "Xcode Applications"
         case .derivedData:
             return "Derived Data"
+        case .mobileDeviceCrashLogs:
+            return "MobileDevice Crash Logs"
         case .archives:
             return "Archives"
         case .deviceSupport:
@@ -2064,6 +2066,8 @@ struct ContentView: View {
             return "Xcode app bundles"
         case .derivedData:
             return "Build products and indexes"
+        case .mobileDeviceCrashLogs:
+            return "Crash/log history from connected physical devices"
         case .archives:
             return "Archived app builds"
         case .deviceSupport:

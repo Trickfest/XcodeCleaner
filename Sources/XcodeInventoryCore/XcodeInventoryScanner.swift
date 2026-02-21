@@ -265,6 +265,13 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
                 safetyClassification: .regenerable
             ),
             makeCategory(
+                kind: .mobileDeviceCrashLogs,
+                title: "MobileDevice Crash Logs",
+                paths: [homeDirectoryURL.appendingPathComponent("Library/Logs/CrashReporter/MobileDevice", isDirectory: true)],
+                ownershipSummary: "Owned by local crash and diagnostic logs captured from connected physical devices",
+                safetyClassification: .conditionallySafe
+            ),
+            makeCategory(
                 kind: .archives,
                 title: "Archives",
                 paths: [homeDirectoryURL.appendingPathComponent("Library/Developer/Xcode/Archives", isDirectory: true)],

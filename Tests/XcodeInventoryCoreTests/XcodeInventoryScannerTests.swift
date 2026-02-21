@@ -34,6 +34,9 @@ struct XcodeInventoryScannerTests {
         let archivesPath = fakeHome
             .appendingPathComponent("Library/Developer/Xcode/Archives", isDirectory: true)
             .path
+        let mobileDeviceCrashLogsPath = fakeHome
+            .appendingPathComponent("Library/Logs/CrashReporter/MobileDevice", isDirectory: true)
+            .path
         let deviceSupportPath = fakeHome
             .appendingPathComponent("Library/Developer/Xcode/iOS DeviceSupport", isDirectory: true)
             .path
@@ -67,6 +70,7 @@ struct XcodeInventoryScannerTests {
                 xcodeBeta.path: 2_000,
                 derivedDataPath: 300,
                 archivesPath: 400,
+                mobileDeviceCrashLogsPath: 450,
                 deviceSupportPath: 500,
                 simulatorDevicesPath: 600,
                 simulatorCachesPath: 700,
@@ -166,8 +170,8 @@ struct XcodeInventoryScannerTests {
         #expect(snapshot.installs.first?.sizeInBytes == 2_000)
         #expect(snapshot.installs.first?.ownershipSummary == "Owned by this Xcode installation bundle")
         #expect(snapshot.installs.first?.safetyClassification == .destructive)
-        #expect(snapshot.storage.totalBytes == 6_300)
-        #expect(snapshot.storage.categories.count == 5)
+        #expect(snapshot.storage.totalBytes == 6_750)
+        #expect(snapshot.storage.categories.count == 6)
         #expect(snapshot.storage.categories[0].kind == .xcodeApplications)
         #expect(snapshot.storage.categories[0].bytes == 3_000)
         #expect(snapshot.storage.categories[0].safetyClassification == .destructive)
@@ -175,6 +179,7 @@ struct XcodeInventoryScannerTests {
         #expect(snapshot.storage.categories[1].bytes == 2_100)
         #expect(snapshot.storage.categories[1].safetyClassification == .conditionallySafe)
         #expect(bytes(for: .deviceSupport, in: snapshot) == 500)
+        #expect(bytes(for: .mobileDeviceCrashLogs, in: snapshot) == 450)
         #expect(bytes(for: .archives, in: snapshot) == 400)
         #expect(bytes(for: .derivedData, in: snapshot) == 300)
         #expect(snapshot.runtimeTelemetry.totalXcodeRunningInstances == 3)

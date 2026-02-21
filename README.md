@@ -19,6 +19,7 @@ Implemented through Sprint 8, plus Sprint 9 reporting foundation:
 - Read-only storage accounting for:
 - Xcode application bundles.
 - DerivedData.
+- MobileDevice Crash Logs.
 - Archives.
 - iOS DeviceSupport.
 - Simulator data (devices, caches, runtimes path).
