@@ -4,12 +4,14 @@ public enum DryRunPlanner {
     public static func makePlan(
         snapshot: XcodeInventorySnapshot,
         selection: DryRunSelection,
+        staleArtifactReport: StaleArtifactReport? = nil,
         now: Date = Date()
     ) -> DryRunPlan {
         var notes: [String] = []
         var selectedKinds = Set(selection.selectedCategoryKinds)
         let selectedDeviceUDIDs = Set(selection.selectedSimulatorDeviceUDIDs)
         let selectedRuntimeIdentifiers = Set(selection.selectedSimulatorRuntimeIdentifiers)
+        let selectedStaleDeviceSupportCandidateIDs = Set(selection.selectedStaleDeviceSupportCandidateIDs)
         let selectedInstallPaths = Set(selection.selectedXcodeInstallPaths.map(normalize(path:)))
 
         // Prevent inaccurate double counting when users select both aggregate simulator data
@@ -22,6 +24,10 @@ public enum DryRunPlanner {
         if selectedKinds.contains(.xcodeApplications), !selectedInstallPaths.isEmpty {
             selectedKinds.remove(.xcodeApplications)
             notes.append("Removed aggregate Xcode Applications category to avoid double counting with selected Xcode installs.")
+        }
+        if selectedKinds.contains(.deviceSupport), !selectedStaleDeviceSupportCandidateIDs.isEmpty {
+            selectedKinds.remove(.deviceSupport)
+            notes.append("Removed aggregate Device Support category to avoid double counting with selected stale Device Support directories.")
         }
 
         var items: [DryRunPlanItem] = []
@@ -89,6 +95,31 @@ public enum DryRunPlanner {
             )
         }
 
+        let staleDeviceSupportCandidatesByID = Dictionary(
+            uniqueKeysWithValues: (staleArtifactReport?.candidates ?? [])
+                .filter { $0.kind == .deviceSupportDirectory }
+                .map { ($0.id, $0) }
+        )
+        for candidateID in selectedStaleDeviceSupportCandidateIDs.sorted() {
+            guard let candidate = staleDeviceSupportCandidatesByID[candidateID] else {
+                notes.append("Selected stale Device Support candidate \(candidateID) was not found in the current stale artifact report.")
+                continue
+            }
+
+            items.append(
+                DryRunPlanItem(
+                    kind: .staleDeviceSupport,
+                    staleArtifactID: candidate.id,
+                    staleArtifactKind: candidate.kind,
+                    title: candidate.title,
+                    reclaimableBytes: candidate.reclaimableBytes,
+                    paths: [candidate.path],
+                    ownershipSummary: candidate.reason,
+                    safetyClassification: candidate.safetyClassification
+                )
+            )
+        }
+
         let installsByPath = Dictionary(uniqueKeysWithValues: snapshot.installs.map { (normalize(path: $0.path), $0) })
         for selectedPath in selectedInstallPaths.sorted() {
             guard let install = installsByPath[selectedPath] else {
@@ -134,6 +165,7 @@ public enum DryRunPlanner {
                 selectedCategoryKinds: Array(selectedKinds).sorted { $0.rawValue < $1.rawValue },
                 selectedSimulatorDeviceUDIDs: selection.selectedSimulatorDeviceUDIDs,
                 selectedSimulatorRuntimeIdentifiers: Array(selectedRuntimeIdentifiers).sorted(),
+                selectedStaleDeviceSupportCandidateIDs: Array(selectedStaleDeviceSupportCandidateIDs).sorted(),
                 selectedXcodeInstallPaths: Array(selectedInstallPaths)
             ),
             items: items,

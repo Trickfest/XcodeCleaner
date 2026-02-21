@@ -258,12 +258,14 @@ public struct DryRunSelection: Codable, Equatable, Sendable {
     public let selectedCategoryKinds: [StorageCategoryKind]
     public let selectedSimulatorDeviceUDIDs: [String]
     public let selectedSimulatorRuntimeIdentifiers: [String]
+    public let selectedStaleDeviceSupportCandidateIDs: [String]
     public let selectedXcodeInstallPaths: [String]
 
     public init(
         selectedCategoryKinds: [StorageCategoryKind],
         selectedSimulatorDeviceUDIDs: [String],
         selectedSimulatorRuntimeIdentifiers: [String] = [],
+        selectedStaleDeviceSupportCandidateIDs: [String] = [],
         selectedXcodeInstallPaths: [String] = []
     ) {
         self.selectedCategoryKinds = Array(Set(selectedCategoryKinds)).sorted {
@@ -271,6 +273,7 @@ public struct DryRunSelection: Codable, Equatable, Sendable {
         }
         self.selectedSimulatorDeviceUDIDs = Array(Set(selectedSimulatorDeviceUDIDs)).sorted()
         self.selectedSimulatorRuntimeIdentifiers = Array(Set(selectedSimulatorRuntimeIdentifiers)).sorted()
+        self.selectedStaleDeviceSupportCandidateIDs = Array(Set(selectedStaleDeviceSupportCandidateIDs)).sorted()
         self.selectedXcodeInstallPaths = Array(Set(selectedXcodeInstallPaths)).sorted()
     }
 
@@ -278,6 +281,7 @@ public struct DryRunSelection: Codable, Equatable, Sendable {
         case selectedCategoryKinds
         case selectedSimulatorDeviceUDIDs
         case selectedSimulatorRuntimeIdentifiers
+        case selectedStaleDeviceSupportCandidateIDs
         case selectedXcodeInstallPaths
     }
 
@@ -287,6 +291,7 @@ public struct DryRunSelection: Codable, Equatable, Sendable {
             selectedCategoryKinds: try container.decode([StorageCategoryKind].self, forKey: .selectedCategoryKinds),
             selectedSimulatorDeviceUDIDs: try container.decode([String].self, forKey: .selectedSimulatorDeviceUDIDs),
             selectedSimulatorRuntimeIdentifiers: try container.decode([String].self, forKey: .selectedSimulatorRuntimeIdentifiers),
+            selectedStaleDeviceSupportCandidateIDs: try container.decode([String].self, forKey: .selectedStaleDeviceSupportCandidateIDs),
             selectedXcodeInstallPaths: try container.decode([String].self, forKey: .selectedXcodeInstallPaths)
         )
     }
@@ -296,6 +301,7 @@ public struct DryRunSelection: Codable, Equatable, Sendable {
         try container.encode(selectedCategoryKinds, forKey: .selectedCategoryKinds)
         try container.encode(selectedSimulatorDeviceUDIDs, forKey: .selectedSimulatorDeviceUDIDs)
         try container.encode(selectedSimulatorRuntimeIdentifiers, forKey: .selectedSimulatorRuntimeIdentifiers)
+        try container.encode(selectedStaleDeviceSupportCandidateIDs, forKey: .selectedStaleDeviceSupportCandidateIDs)
         try container.encode(selectedXcodeInstallPaths, forKey: .selectedXcodeInstallPaths)
     }
 
@@ -303,6 +309,7 @@ public struct DryRunSelection: Codable, Equatable, Sendable {
         selectedCategoryKinds: [.derivedData, .archives, .deviceSupport],
         selectedSimulatorDeviceUDIDs: [],
         selectedSimulatorRuntimeIdentifiers: [],
+        selectedStaleDeviceSupportCandidateIDs: [],
         selectedXcodeInstallPaths: []
     )
 }

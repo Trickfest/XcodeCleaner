@@ -339,6 +339,70 @@ struct XcodeInventoryScannerTests {
         #expect(plan.notes.contains(where: { $0.contains("double counting") }))
         #expect(plan.selection.selectedCategoryKinds.isEmpty)
     }
+
+    @Test("Dry-run planner supports stale Device Support directory selection in main plan")
+    func dryRunPlannerStaleDeviceSupportSelection() {
+        let baseSnapshot = makePlanningSnapshot()
+        let snapshot = XcodeInventorySnapshot(
+            scannedAt: baseSnapshot.scannedAt,
+            activeDeveloperDirectoryPath: baseSnapshot.activeDeveloperDirectoryPath,
+            installs: baseSnapshot.installs,
+            storage: XcodeStorageUsage(
+                categories: baseSnapshot.storage.categories + [
+                    StorageCategoryUsage(
+                        kind: .deviceSupport,
+                        title: "Device Support",
+                        bytes: 1_000,
+                        paths: ["/tmp/DeviceSupport"],
+                        ownershipSummary: "Owned by physical-device support files",
+                        safetyClassification: .regenerable
+                    ),
+                ],
+                totalBytes: baseSnapshot.storage.totalBytes + 1_000
+            ),
+            simulator: baseSnapshot.simulator,
+            runtimeTelemetry: baseSnapshot.runtimeTelemetry
+        )
+
+        let candidateID = "deviceSupportDirectory:/tmp/DeviceSupport/16.4 (20E247)"
+        let staleReport = StaleArtifactReport(
+            generatedAt: Date(timeIntervalSince1970: 700),
+            candidates: [
+                StaleArtifactCandidate(
+                    id: candidateID,
+                    kind: .deviceSupportDirectory,
+                    title: "Stale Device Support: 16.4 (20E247)",
+                    path: "/tmp/DeviceSupport/16.4 (20E247)",
+                    reclaimableBytes: 300,
+                    reason: "Older Device Support directory; newest two parsed versions are retained.",
+                    safetyClassification: .regenerable
+                ),
+            ],
+            totalReclaimableBytes: 300,
+            notes: []
+        )
+
+        let selection = DryRunSelection(
+            selectedCategoryKinds: [.deviceSupport],
+            selectedSimulatorDeviceUDIDs: [],
+            selectedSimulatorRuntimeIdentifiers: [],
+            selectedStaleDeviceSupportCandidateIDs: [candidateID]
+        )
+
+        let plan = DryRunPlanner.makePlan(
+            snapshot: snapshot,
+            selection: selection,
+            staleArtifactReport: staleReport
+        )
+
+        #expect(plan.items.count == 1)
+        #expect(plan.items[0].kind == .staleDeviceSupport)
+        #expect(plan.items[0].staleArtifactID == candidateID)
+        #expect(plan.items[0].paths == ["/tmp/DeviceSupport/16.4 (20E247)"])
+        #expect(plan.totalReclaimableBytes == 300)
+        #expect(plan.notes.contains(where: { $0.contains("double counting") }))
+        #expect(plan.selection.selectedCategoryKinds.isEmpty)
+    }
 }
 
 private struct StubDiscoverer: XcodeApplicationDiscovering {

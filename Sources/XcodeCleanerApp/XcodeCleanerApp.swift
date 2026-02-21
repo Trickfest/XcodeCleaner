@@ -586,7 +586,6 @@ private enum AppSection: String, CaseIterable, Identifiable {
     case overview
     case cleanup
     case automation
-    case tools
     case reports
 
     var id: String { rawValue }
@@ -599,8 +598,6 @@ private enum AppSection: String, CaseIterable, Identifiable {
             return "Cleanup"
         case .automation:
             return "Automation"
-        case .tools:
-            return "Tools"
         case .reports:
             return "Reports"
         }
@@ -614,8 +611,6 @@ private enum AppSection: String, CaseIterable, Identifiable {
             return "trash"
         case .automation:
             return "clock.arrow.circlepath"
-        case .tools:
-            return "wrench.and.screwdriver"
         case .reports:
             return "doc.text"
         }
@@ -626,11 +621,12 @@ struct ContentView: View {
     @ObservedObject var viewModel: InventoryViewModel
     @State private var selectedCategoryKinds: Set<StorageCategoryKind> = Set(DryRunSelection.safeCategoryDefaults.selectedCategoryKinds)
     @State private var selectedSimulatorDeviceUDIDs: Set<String> = []
+    @State private var selectedSimulatorRuntimeIdentifiers: Set<String> = []
     @State private var selectedXcodeInstallPaths: Set<String> = []
     @State private var allowDirectDeleteFallback = false
     @State private var blockCleanupWhileToolsRunning = true
     @State private var selectedSwitchInstallPath: String = ""
-    @State private var selectedStaleArtifactIDs: Set<String> = []
+    @State private var selectedStaleDeviceSupportCandidateIDs: Set<String> = []
     @State private var newPolicyName = ""
     @State private var newPolicyEveryHours = ""
     @State private var newPolicyMinAgeDays = ""
@@ -666,7 +662,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("XcodeCleaner")
                     .font(.largeTitle.bold())
-                Text("Sprint 10 Chunks 4-5: Tools and reports consolidation")
+                Text("Sprint 10: UI consolidation")
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -728,6 +724,7 @@ struct ContentView: View {
                         runtimeTelemetryView(snapshot: snapshot)
                         storageOverviewView(snapshot: snapshot)
                         installInventoryView(snapshot: snapshot)
+                        activeXcodeSwitchPanel(snapshot: snapshot)
                         simulatorInventoryView(snapshot: snapshot)
                     }
                 }
@@ -736,10 +733,6 @@ struct ContentView: View {
             case .automation:
                 ScrollView {
                     automationPoliciesView()
-                }
-            case .tools:
-                ScrollView {
-                    modificationToolsView(snapshot: snapshot)
                 }
             case .reports:
                 ScrollView {
@@ -821,47 +814,6 @@ struct ContentView: View {
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
     }
 
-    private func modificationToolsView(snapshot: XcodeInventorySnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Tools")
-                .font(.headline)
-            Text("Operational utilities for active-Xcode switching and stale artifact cleanup.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            toolsRuntimeSummaryPanel(snapshot: snapshot)
-
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .top, spacing: 12) {
-                    activeXcodeSwitchPanel(snapshot: snapshot)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    staleArtifactManagementPanel()
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                VStack(alignment: .leading, spacing: 12) {
-                    activeXcodeSwitchPanel(snapshot: snapshot)
-                    staleArtifactManagementPanel()
-                }
-            }
-        }
-    }
-
-    private func toolsRuntimeSummaryPanel(snapshot: XcodeInventorySnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Runtime Summary")
-                .font(.subheadline.weight(.semibold))
-            HStack(spacing: 10) {
-                Text("Running Xcode instances: \(snapshot.runtimeTelemetry.totalXcodeRunningInstances)")
-                Text("Running Simulator instances: \(snapshot.runtimeTelemetry.totalSimulatorAppRunningInstances)")
-                Text("Stale selected: \(selectedStaleArtifactIDs.count)")
-            }
-            .font(.caption.monospacedDigit())
-            .foregroundStyle(.secondary)
-        }
-        .padding(10)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
-    }
-
     private func activeXcodeSwitchPanel(snapshot: XcodeInventorySnapshot) -> some View {
         let hasAlternateInstall = snapshot.installs.contains(where: { !$0.isActive })
         let selectedInstall = snapshot.installs.first(where: { $0.path == selectedSwitchInstallPath })
@@ -926,112 +878,30 @@ struct ContentView: View {
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
     }
 
-    private func staleArtifactManagementPanel() -> some View {
-        let staleReport = viewModel.staleArtifactReport
-
-        return VStack(alignment: .leading, spacing: 10) {
-            Text("Stale Runtime / Device Support")
-                .font(.subheadline.weight(.semibold))
-
-            if let staleReport {
-                Text("Candidates: \(staleReport.candidates.count) | Selected: \(selectedStaleArtifactIDs.count) | Estimated reclaim: \(formatBytes(staleReport.totalReclaimableBytes))")
-                    .font(.callout.monospacedDigit())
-                    .foregroundStyle(.secondary)
-
-                Toggle("Block cleanup while Xcode/Simulator tools are running (recommended)", isOn: $blockCleanupWhileToolsRunning)
-                    .font(.caption)
-                Toggle("Allow direct delete fallback when move-to-trash fails", isOn: $allowDirectDeleteFallback)
-                    .font(.caption)
-
-                if staleReport.candidates.isEmpty {
-                    Text("No stale candidates detected.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(staleReport.candidates) { candidate in
-                        Toggle(
-                            isOn: Binding(
-                                get: { selectedStaleArtifactIDs.contains(candidate.id) },
-                                set: { isSelected in
-                                    if isSelected {
-                                        selectedStaleArtifactIDs.insert(candidate.id)
-                                    } else {
-                                        selectedStaleArtifactIDs.remove(candidate.id)
-                                    }
-                                }
-                            )
-                        ) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack {
-                                    Text(candidate.title)
-                                    Spacer()
-                                    Text(formatBytes(candidate.reclaimableBytes))
-                                        .font(.caption.monospacedDigit())
-                                        .foregroundStyle(.secondary)
-                                }
-                                Text("Kind: \(candidate.kind.rawValue), Safety: \(candidate.safetyClassification.rawValue)")
-                                    .font(.caption.monospaced())
-                                    .foregroundStyle(color(for: candidate.safetyClassification))
-                                Text(candidate.path)
-                                    .font(.caption.monospaced())
-                                    .foregroundStyle(.secondary)
-                                    .textSelection(.enabled)
-                                Text(candidate.reason)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                }
-
-                HStack(spacing: 10) {
-                    Button("Clean Selected Stale Artifacts") {
-                        viewModel.executeStaleCleanup(
-                            selectedCandidateIDs: Array(selectedStaleArtifactIDs),
-                            allowDirectDelete: allowDirectDeleteFallback,
-                            requireToolsStopped: blockCleanupWhileToolsRunning
-                        )
-                    }
-                    .disabled(staleReport.candidates.isEmpty || selectedStaleArtifactIDs.isEmpty || viewModel.isExecuting || viewModel.isLoading)
-
-                    Button("Select All") {
-                        selectedStaleArtifactIDs = Set(staleReport.candidates.map(\.id))
-                    }
-                    .disabled(staleReport.candidates.isEmpty)
-
-                    Button("Clear Selection") {
-                        selectedStaleArtifactIDs.removeAll()
-                    }
-                    .disabled(selectedStaleArtifactIDs.isEmpty)
-                }
-
-                if !staleReport.notes.isEmpty {
-                    ForEach(Array(staleReport.notes.enumerated()), id: \.offset) { _, note in
-                        Text(note)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            } else {
-                Text("Stale artifact report not available yet.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(10)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
-    }
-
     private func cleanupWorkflowView(snapshot: XcodeInventorySnapshot) -> some View {
+        let staleArtifactReport = viewModel.staleArtifactReport
+        let staleDeviceSupportCandidates = (staleArtifactReport?.candidates ?? [])
+            .filter { $0.kind == .deviceSupportDirectory }
+        let staleDeviceSupportCandidateIDs = Set(staleDeviceSupportCandidates.map(\.id))
+        let selectedStaleDeviceSupportIDsForPlan = selectedStaleDeviceSupportCandidateIDs
+            .intersection(staleDeviceSupportCandidateIDs)
         let selection = DryRunSelection(
             selectedCategoryKinds: Array(selectedCategoryKinds),
             selectedSimulatorDeviceUDIDs: Array(selectedSimulatorDeviceUDIDs),
+            selectedSimulatorRuntimeIdentifiers: Array(selectedSimulatorRuntimeIdentifiers),
+            selectedStaleDeviceSupportCandidateIDs: Array(selectedStaleDeviceSupportIDsForPlan),
             selectedXcodeInstallPaths: Array(selectedXcodeInstallPaths)
         )
-        let plan = DryRunPlanner.makePlan(snapshot: snapshot, selection: selection)
+        let plan = DryRunPlanner.makePlan(
+            snapshot: snapshot,
+            selection: selection,
+            staleArtifactReport: staleArtifactReport
+        )
         let simulatorRuntimeByIdentifier = Dictionary(
             uniqueKeysWithValues: snapshot.simulator.runtimes.map { ($0.identifier, $0) }
         )
+        let runtimeStaleReasonsByIdentifier = simulatorRuntimeStaleReasonsByIdentifier(in: snapshot)
+        let deviceStaleReasonsByUDID = simulatorDeviceStaleReasonsByUDID(in: snapshot)
         let runningXcodeInstances = snapshot.runtimeTelemetry.totalXcodeRunningInstances
         let runningSimulatorAppInstances = snapshot.runtimeTelemetry.totalSimulatorAppRunningInstances
         let bootedSimulatorDeviceCount = snapshot.simulator.devices.filter { device in
@@ -1206,6 +1076,86 @@ struct ContentView: View {
                         }
                     }
 
+                    Text("Simulator Artifacts")
+                        .font(.callout.weight(.medium))
+                    Text("CoreSimulator runtimes and per-device data. Stale items are marked inline.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("Simulator Runtimes")
+                            .font(.callout.weight(.medium))
+                        Text("Deletes selected runtime bundles. Blocked while Simulator app/devices are running.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    if snapshot.simulator.runtimes.isEmpty {
+                        Text("No simulator runtimes found in this scan.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(snapshot.simulator.runtimes) { runtime in
+                            let staleReasons = runtimeStaleReasonsByIdentifier[runtime.identifier] ?? []
+                            let isStale = !staleReasons.isEmpty
+                            let hasBundlePath = runtime.bundlePath != nil
+                            Toggle(
+                                isOn: Binding(
+                                    get: { selectedSimulatorRuntimeIdentifiers.contains(runtime.identifier) },
+                                    set: { isSelected in
+                                        if isSelected {
+                                            selectedSimulatorRuntimeIdentifiers.insert(runtime.identifier)
+                                        } else {
+                                            selectedSimulatorRuntimeIdentifiers.remove(runtime.identifier)
+                                        }
+                                    }
+                                )
+                            ) {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        HStack(spacing: 6) {
+                                            Text(runtime.name)
+                                            if isStale {
+                                                Text("STALE")
+                                                    .font(.caption2.weight(.bold))
+                                                    .padding(.horizontal, 5)
+                                                    .padding(.vertical, 2)
+                                                    .background(Color.orange.opacity(0.2))
+                                                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                                            }
+                                        }
+                                        Text("Version: \(runtime.version ?? "Unknown") | Available: \(runtime.isAvailable ? "Yes" : "No")")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                        Text("Identifier: \(runtime.identifier)")
+                                            .font(.caption.monospaced())
+                                            .foregroundStyle(.secondary)
+                                            .textSelection(.enabled)
+                                        if let bundlePath = runtime.bundlePath {
+                                            Text(bundlePath)
+                                                .font(.caption.monospaced())
+                                                .foregroundStyle(.secondary)
+                                                .textSelection(.enabled)
+                                        } else {
+                                            Text("No bundle path available in snapshot; runtime cannot be selected for cleanup.")
+                                                .font(.caption)
+                                                .foregroundStyle(.orange)
+                                        }
+                                        if isStale {
+                                            Text("Stale: \(runtimeStaleSummary(staleReasons))")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                    Spacer()
+                                    Text(formatBytes(runtime.sizeInBytes))
+                                        .font(.callout.monospacedDigit())
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .disabled(!hasBundlePath)
+                        }
+                    }
+
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text("Simulator Devices")
                             .font(.callout.weight(.medium))
@@ -1225,6 +1175,8 @@ struct ContentView: View {
                             let stateLabel = device.runningInstanceCount > 0
                                 ? "\(device.state) (running x\(device.runningInstanceCount))"
                                 : device.state
+                            let staleReasons = deviceStaleReasonsByUDID[device.udid] ?? []
+                            let isStale = !staleReasons.isEmpty
                             Toggle(
                                 isOn: Binding(
                                     get: { selectedSimulatorDeviceUDIDs.contains(device.udid) },
@@ -1249,6 +1201,14 @@ struct ContentView: View {
                                                     .background(Color.orange.opacity(0.2))
                                                     .clipShape(RoundedRectangle(cornerRadius: 4))
                                             }
+                                            if isStale {
+                                                Text("STALE")
+                                                    .font(.caption2.weight(.bold))
+                                                    .padding(.horizontal, 5)
+                                                    .padding(.vertical, 2)
+                                                    .background(Color.orange.opacity(0.2))
+                                                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                                            }
                                         }
                                         Text("Runtime: \(runtimeName) | Version: \(runtimeVersion)")
                                             .font(.caption)
@@ -1260,6 +1220,11 @@ struct ContentView: View {
                                             .font(.caption.monospaced())
                                             .foregroundStyle(.secondary)
                                             .textSelection(.enabled)
+                                        if isStale {
+                                            Text("Stale: \(deviceStaleSummary(staleReasons))")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
                                     }
                                     Spacer()
                                     Text(formatBytes(device.sizeInBytes))
@@ -1304,6 +1269,49 @@ struct ContentView: View {
                                     }
                                     Spacer()
                                     Text(formatBytes(install.sizeInBytes))
+                                        .font(.callout.monospacedDigit())
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+
+                    Text("Stale Physical Device Support Directories")
+                        .font(.callout.weight(.medium))
+                    Text("Physical-device support folders for real devices (not simulator data).")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if staleDeviceSupportCandidates.isEmpty {
+                        Text("No stale Physical Device Support directories detected in this scan.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(staleDeviceSupportCandidates) { candidate in
+                            Toggle(
+                                isOn: Binding(
+                                    get: { selectedStaleDeviceSupportCandidateIDs.contains(candidate.id) },
+                                    set: { isSelected in
+                                        if isSelected {
+                                            selectedStaleDeviceSupportCandidateIDs.insert(candidate.id)
+                                        } else {
+                                            selectedStaleDeviceSupportCandidateIDs.remove(candidate.id)
+                                        }
+                                    }
+                                )
+                            ) {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(candidate.title)
+                                        Text(candidate.reason)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                        Text(candidate.path)
+                                            .font(.caption.monospaced())
+                                            .foregroundStyle(.secondary)
+                                            .textSelection(.enabled)
+                                    }
+                                    Spacer()
+                                    Text(formatBytes(candidate.reclaimableBytes))
                                         .font(.callout.monospacedDigit())
                                         .foregroundStyle(.secondary)
                                 }
@@ -1687,12 +1695,22 @@ struct ContentView: View {
     }
 
     private func runtimeTelemetryView(snapshot: XcodeInventorySnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let runtimeStaleReasonsByIdentifier = simulatorRuntimeStaleReasonsByIdentifier(in: snapshot)
+        let deviceStaleReasonsByUDID = simulatorDeviceStaleReasonsByUDID(in: snapshot)
+        let staleRuntimeCount = snapshot.simulator.runtimes.filter { runtime in
+            !(runtimeStaleReasonsByIdentifier[runtime.identifier] ?? []).isEmpty
+        }.count
+        let staleDeviceCount = snapshot.simulator.devices.filter { device in
+            !(deviceStaleReasonsByUDID[device.udid] ?? []).isEmpty
+        }.count
+        return VStack(alignment: .leading, spacing: 6) {
             Text("Runtime Telemetry")
                 .font(.headline)
             HStack(spacing: 12) {
                 Text("Running Xcode instances: \(snapshot.runtimeTelemetry.totalXcodeRunningInstances)")
                 Text("Running Simulator app instances: \(snapshot.runtimeTelemetry.totalSimulatorAppRunningInstances)")
+                Text("Stale runtimes: \(staleRuntimeCount)")
+                Text("Stale devices: \(staleDeviceCount)")
             }
             .font(.callout.monospacedDigit())
             .foregroundStyle(.secondary)
@@ -1805,21 +1823,40 @@ struct ContentView: View {
     }
 
     private func simulatorInventoryView(snapshot: XcodeInventorySnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let runtimeStaleReasonsByIdentifier = simulatorRuntimeStaleReasonsByIdentifier(in: snapshot)
+        let deviceStaleReasonsByUDID = simulatorDeviceStaleReasonsByUDID(in: snapshot)
+        let staleRuntimeCount = snapshot.simulator.runtimes.filter { runtime in
+            !(runtimeStaleReasonsByIdentifier[runtime.identifier] ?? []).isEmpty
+        }.count
+        let staleDeviceCount = snapshot.simulator.devices.filter { device in
+            !(deviceStaleReasonsByUDID[device.udid] ?? []).isEmpty
+        }.count
+
+        return VStack(alignment: .leading, spacing: 12) {
             Text("Simulator Inventory")
                 .font(.headline)
 
-            Text("Devices: \(snapshot.simulator.devices.count), Runtimes: \(snapshot.simulator.runtimes.count)")
+            Text("Devices: \(snapshot.simulator.devices.count), Runtimes: \(snapshot.simulator.runtimes.count), Stale devices: \(staleDeviceCount), Stale runtimes: \(staleRuntimeCount)")
                 .font(.callout.monospacedDigit())
                 .foregroundStyle(.secondary)
 
             Text("Simulator Runtimes")
                 .font(.subheadline.weight(.semibold))
             ForEach(snapshot.simulator.runtimes) { runtime in
+                let staleReasons = runtimeStaleReasonsByIdentifier[runtime.identifier] ?? []
+                let isStale = !staleReasons.isEmpty
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Text(runtime.name)
                             .font(.callout.weight(.medium))
+                        if isStale {
+                            Text("STALE")
+                                .font(.caption2.weight(.bold))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 3)
+                                .background(Color.orange.opacity(0.2))
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                        }
                         Spacer()
                         Text(formatBytes(runtime.sizeInBytes))
                             .font(.callout.monospacedDigit())
@@ -1837,6 +1874,11 @@ struct ContentView: View {
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
                     }
+                    if isStale {
+                        Text("Stale: \(runtimeStaleSummary(staleReasons))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     Text("Safety: \(runtime.safetyClassification.rawValue)")
                         .font(.caption.monospaced())
                         .foregroundStyle(color(for: runtime.safetyClassification))
@@ -1848,6 +1890,8 @@ struct ContentView: View {
             Text("Simulator Devices")
                 .font(.subheadline.weight(.semibold))
             ForEach(snapshot.simulator.devices) { device in
+                let staleReasons = deviceStaleReasonsByUDID[device.udid] ?? []
+                let isStale = !staleReasons.isEmpty
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Text(device.name)
@@ -1855,6 +1899,14 @@ struct ContentView: View {
                         Spacer()
                         if device.runningInstanceCount > 0 {
                             Text("RUNNING x\(device.runningInstanceCount)")
+                                .font(.caption2.weight(.bold))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 3)
+                                .background(Color.orange.opacity(0.2))
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                        }
+                        if isStale {
+                            Text("STALE")
                                 .font(.caption2.weight(.bold))
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 3)
@@ -1878,6 +1930,11 @@ struct ContentView: View {
                         .font(.caption.monospaced())
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
+                    if isStale {
+                        Text("Stale: \(deviceStaleSummary(staleReasons))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     Text("Safety: \(device.safetyClassification.rawValue)")
                         .font(.caption.monospaced())
                         .foregroundStyle(color(for: device.safetyClassification))
@@ -2014,6 +2071,61 @@ struct ContentView: View {
         case .simulatorData:
             return "CoreSimulator devices/caches/runtimes"
         }
+    }
+
+    private func simulatorRuntimeStaleReasonsByIdentifier(
+        in snapshot: XcodeInventorySnapshot
+    ) -> [String: [SimulatorRuntimeStaleReason]] {
+        var result: [String: [SimulatorRuntimeStaleReason]] = [:]
+        for runtime in snapshot.simulator.runtimes {
+            result[runtime.identifier] = SimulatorStaleness.runtimeStaleReasons(
+                for: runtime,
+                devices: snapshot.simulator.devices
+            )
+        }
+        return result
+    }
+
+    private func simulatorDeviceStaleReasonsByUDID(
+        in snapshot: XcodeInventorySnapshot
+    ) -> [String: [SimulatorDeviceStaleReason]] {
+        let runtimeByIdentifier = Dictionary(
+            uniqueKeysWithValues: snapshot.simulator.runtimes.map { ($0.identifier, $0) }
+        )
+        var result: [String: [SimulatorDeviceStaleReason]] = [:]
+        for device in snapshot.simulator.devices {
+            result[device.udid] = SimulatorStaleness.deviceStaleReasons(
+                for: device,
+                runtimeByIdentifier: runtimeByIdentifier
+            )
+        }
+        return result
+    }
+
+    private func runtimeStaleSummary(_ reasons: [SimulatorRuntimeStaleReason]) -> String {
+        reasons.map { reason in
+            switch reason {
+            case .unavailable:
+                return "runtime unavailable"
+            case .unreferencedByAnyDevice:
+                return "not referenced by any simulator device"
+            }
+        }
+        .joined(separator: ", ")
+    }
+
+    private func deviceStaleSummary(_ reasons: [SimulatorDeviceStaleReason]) -> String {
+        reasons.map { reason in
+            switch reason {
+            case .unavailable:
+                return "device unavailable"
+            case .runtimeMissing:
+                return "runtime missing from scan"
+            case .runtimeUnavailable:
+                return "runtime unavailable"
+            }
+        }
+        .joined(separator: ", ")
     }
 
     private func isAutomationPolicyDueNow(_ policy: AutomationPolicy) -> Bool {
