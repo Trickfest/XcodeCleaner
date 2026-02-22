@@ -1280,11 +1280,8 @@ struct ContentView: View {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text("Physical Device Support Directories")
                             .font(.callout.weight(.medium))
-                        Text("Deletes selected version folders under iOS DeviceSupport (real-device support files).")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
                     }
-                    Text("Each selection removes that folder only; it does not remove Xcode or simulator runtimes.")
+                    Text("Real-device debug/symbol caches under iOS DeviceSupport (not simulator data). Deleting selected folders removes only those caches; Xcode regenerates them when matching devices reconnect (first debug may be slower).")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     if physicalDeviceSupportDirectories.isEmpty {
