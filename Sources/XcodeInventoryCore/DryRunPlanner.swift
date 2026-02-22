@@ -4,14 +4,15 @@ public enum DryRunPlanner {
     public static func makePlan(
         snapshot: XcodeInventorySnapshot,
         selection: DryRunSelection,
-        staleArtifactReport: StaleArtifactReport? = nil,
         now: Date = Date()
     ) -> DryRunPlan {
         var notes: [String] = []
         var selectedKinds = Set(selection.selectedCategoryKinds)
         let selectedDeviceUDIDs = Set(selection.selectedSimulatorDeviceUDIDs)
         let selectedRuntimeIdentifiers = Set(selection.selectedSimulatorRuntimeIdentifiers)
-        let selectedStaleDeviceSupportCandidateIDs = Set(selection.selectedStaleDeviceSupportCandidateIDs)
+        let selectedPhysicalDeviceSupportDirectoryPaths = Set(
+            selection.selectedPhysicalDeviceSupportDirectoryPaths.map(normalize(path:))
+        )
         let selectedInstallPaths = Set(selection.selectedXcodeInstallPaths.map(normalize(path:)))
 
         // Prevent inaccurate double counting when users select both aggregate simulator data
@@ -25,9 +26,9 @@ public enum DryRunPlanner {
             selectedKinds.remove(.xcodeApplications)
             notes.append("Removed aggregate Xcode Applications category to avoid double counting with selected Xcode installs.")
         }
-        if selectedKinds.contains(.deviceSupport), !selectedStaleDeviceSupportCandidateIDs.isEmpty {
+        if selectedKinds.contains(.deviceSupport), !selectedPhysicalDeviceSupportDirectoryPaths.isEmpty {
             selectedKinds.remove(.deviceSupport)
-            notes.append("Removed aggregate Device Support category to avoid double counting with selected stale Device Support directories.")
+            notes.append("Removed aggregate Device Support category to avoid double counting with selected physical Device Support directories.")
         }
 
         var items: [DryRunPlanItem] = []
@@ -95,27 +96,25 @@ public enum DryRunPlanner {
             )
         }
 
-        let staleDeviceSupportCandidatesByID = Dictionary(
-            uniqueKeysWithValues: (staleArtifactReport?.candidates ?? [])
-                .filter { $0.kind == .deviceSupportDirectory }
-                .map { ($0.id, $0) }
+        let physicalDeviceSupportByPath = Dictionary(
+            uniqueKeysWithValues: snapshot.physicalDeviceSupportDirectories.map { directory in
+                (normalize(path: directory.path), directory)
+            }
         )
-        for candidateID in selectedStaleDeviceSupportCandidateIDs.sorted() {
-            guard let candidate = staleDeviceSupportCandidatesByID[candidateID] else {
-                notes.append("Selected stale Device Support candidate \(candidateID) was not found in the current stale artifact report.")
+        for selectedPath in selectedPhysicalDeviceSupportDirectoryPaths.sorted() {
+            guard let directory = physicalDeviceSupportByPath[selectedPath] else {
+                notes.append("Selected physical Device Support directory \(selectedPath) was not found in the current scan snapshot.")
                 continue
             }
 
             items.append(
                 DryRunPlanItem(
-                    kind: .staleDeviceSupport,
-                    staleArtifactID: candidate.id,
-                    staleArtifactKind: candidate.kind,
-                    title: candidate.title,
-                    reclaimableBytes: candidate.reclaimableBytes,
-                    paths: [candidate.path],
-                    ownershipSummary: candidate.reason,
-                    safetyClassification: candidate.safetyClassification
+                    kind: .deviceSupportDirectory,
+                    title: "Physical Device Support Directory: \(directory.name)",
+                    reclaimableBytes: directory.sizeInBytes,
+                    paths: [directory.path],
+                    ownershipSummary: "Owned by local support files for connected physical devices",
+                    safetyClassification: .regenerable
                 )
             )
         }
@@ -165,7 +164,7 @@ public enum DryRunPlanner {
                 selectedCategoryKinds: Array(selectedKinds).sorted { $0.rawValue < $1.rawValue },
                 selectedSimulatorDeviceUDIDs: selection.selectedSimulatorDeviceUDIDs,
                 selectedSimulatorRuntimeIdentifiers: Array(selectedRuntimeIdentifiers).sorted(),
-                selectedStaleDeviceSupportCandidateIDs: Array(selectedStaleDeviceSupportCandidateIDs).sorted(),
+                selectedPhysicalDeviceSupportDirectoryPaths: Array(selectedPhysicalDeviceSupportDirectoryPaths).sorted(),
                 selectedXcodeInstallPaths: Array(selectedInstallPaths)
             ),
             items: items,

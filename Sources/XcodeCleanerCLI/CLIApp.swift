@@ -613,6 +613,14 @@ func printUsage(toStandardError: Bool = false) {
 
     Storage Categories:
       \(categoryValues)
+
+    Category semantics:
+      - xcodeApplications: Aggregate delete of selected Xcode app bundle paths.
+      - derivedData: Build products and indexes under ~/Library/Developer/Xcode/DerivedData.
+      - mobileDeviceCrashLogs: Crash/log capture folders under ~/Library/Logs/CrashReporter/MobileDevice.
+      - archives: Archived app builds under ~/Library/Developer/Xcode/Archives.
+      - deviceSupport: Aggregate delete of all physical-device support directories under ~/Library/Developer/Xcode/iOS DeviceSupport.
+      - simulatorData: Aggregate delete of CoreSimulator devices/caches/runtimes roots.
     """
     if toStandardError {
         writeToStandardError("\(usage)\n")
@@ -635,6 +643,7 @@ func printAutomationUsage(toStandardError: Bool = false) {
     Notes:
       - If no categories are provided during create, safe defaults are used.
       - Supported categories: \(categoryValues)
+      - deviceSupport in automation/CLI is aggregate cleanup of all iOS DeviceSupport directories.
       - Schedule:
         - Omit --every-hours for manual-only policy.
         - Provide --every-hours for scheduled policy cadence.

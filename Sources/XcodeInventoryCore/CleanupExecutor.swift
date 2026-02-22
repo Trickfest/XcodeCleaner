@@ -272,7 +272,11 @@ public struct CleanupExecutor: @unchecked Sendable {
                     || snapshot.simulator.devices.contains(where: simulatorDeviceIsRunning) {
                     return "Blocked: simulator data cleanup requires Simulator app and booted devices to be stopped."
                 }
-            case .derivedData, .mobileDeviceCrashLogs, .archives, .deviceSupport:
+            case .deviceSupport:
+                if snapshot.runtimeTelemetry.totalXcodeRunningInstances > 0 {
+                    return "Blocked: close running Xcode instances before deleting aggregate Device Support directories."
+                }
+            case .derivedData, .mobileDeviceCrashLogs, .archives:
                 break
             }
             return nil
@@ -305,6 +309,11 @@ public struct CleanupExecutor: @unchecked Sendable {
             if snapshot.runtimeTelemetry.totalSimulatorAppRunningInstances > 0
                 || snapshot.simulator.devices.contains(where: simulatorDeviceIsRunning) {
                 return "Blocked: close Simulator and shut down booted devices before deleting stale runtime artifacts."
+            }
+            return nil
+        case .deviceSupportDirectory:
+            if snapshot.runtimeTelemetry.totalXcodeRunningInstances > 0 {
+                return "Blocked: close running Xcode instances before deleting physical Device Support directories."
             }
             return nil
         case .staleDeviceSupport:

@@ -233,6 +233,51 @@ struct XcodeInventoryScannerTests {
         #expect(snapshot.simulator.devices.isEmpty)
     }
 
+    @Test("Scanner enumerates physical Device Support directories with metadata")
+    func scannerEnumeratesPhysicalDeviceSupportDirectories() throws {
+        let sandbox = try TemporaryDirectory.make()
+        defer { sandbox.cleanup() }
+
+        let fakeHome = sandbox.url.appendingPathComponent("fake-home", isDirectory: true)
+        let deviceSupportRoot = fakeHome
+            .appendingPathComponent("Library/Developer/Xcode/iOS DeviceSupport", isDirectory: true)
+        let directory18 = deviceSupportRoot.appendingPathComponent("18.0 (22A123)", isDirectory: true)
+        let directory17 = deviceSupportRoot.appendingPathComponent("17.5 (21F90) arm64e", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory18, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: directory17, withIntermediateDirectories: true)
+
+        let scanner = XcodeInventoryScanner(
+            applicationDiscoverer: StubDiscoverer(urls: []),
+            activeDeveloperDirectoryProvider: StubActiveDeveloperProvider(url: nil),
+            pathSizer: StubPathSizer(sizeByPath: [
+                deviceSupportRoot.path: 900,
+                directory18.path: 500,
+                directory17.path: 400,
+            ]),
+            homeDirectoryProvider: StubHomeDirectoryProvider(url: fakeHome),
+            runningApplicationsProvider: StubRunningApplicationsProvider(records: []),
+            simulatorListingProvider: StubSimulatorListingProvider(
+                listing: SimulatorListing(devices: [], runtimes: [])
+            ),
+            now: { Date(timeIntervalSince1970: 200) }
+        )
+
+        let snapshot = scanner.scan()
+
+        #expect(snapshot.physicalDeviceSupportDirectories.count == 2)
+        #expect(snapshot.physicalDeviceSupportDirectories[0].name == "18.0 (22A123)")
+        #expect(snapshot.physicalDeviceSupportDirectories[0].parsedOSVersion == "18.0")
+        #expect(snapshot.physicalDeviceSupportDirectories[0].parsedBuild == "22A123")
+        #expect(snapshot.physicalDeviceSupportDirectories[0].parsedDescriptor == nil)
+        #expect(snapshot.physicalDeviceSupportDirectories[0].sizeInBytes == 500)
+
+        #expect(snapshot.physicalDeviceSupportDirectories[1].name == "17.5 (21F90) arm64e")
+        #expect(snapshot.physicalDeviceSupportDirectories[1].parsedOSVersion == "17.5")
+        #expect(snapshot.physicalDeviceSupportDirectories[1].parsedBuild == "21F90")
+        #expect(snapshot.physicalDeviceSupportDirectories[1].parsedDescriptor == "arm64e")
+        #expect(snapshot.physicalDeviceSupportDirectories[1].sizeInBytes == 400)
+    }
+
     @Test("Scanner emits monotonic progress updates with stable phase order")
     func scannerProgressUpdates() throws {
         let sandbox = try TemporaryDirectory.make()
@@ -345,8 +390,8 @@ struct XcodeInventoryScannerTests {
         #expect(plan.selection.selectedCategoryKinds.isEmpty)
     }
 
-    @Test("Dry-run planner supports stale Device Support directory selection in main plan")
-    func dryRunPlannerStaleDeviceSupportSelection() {
+    @Test("Dry-run planner supports per-directory physical Device Support selection in main plan")
+    func dryRunPlannerPhysicalDeviceSupportSelection() {
         let baseSnapshot = makePlanningSnapshot()
         let snapshot = XcodeInventorySnapshot(
             scannedAt: baseSnapshot.scannedAt,
@@ -365,44 +410,35 @@ struct XcodeInventoryScannerTests {
                 ],
                 totalBytes: baseSnapshot.storage.totalBytes + 1_000
             ),
-            simulator: baseSnapshot.simulator,
-            runtimeTelemetry: baseSnapshot.runtimeTelemetry
-        )
-
-        let candidateID = "deviceSupportDirectory:/tmp/DeviceSupport/16.4 (20E247)"
-        let staleReport = StaleArtifactReport(
-            generatedAt: Date(timeIntervalSince1970: 700),
-            candidates: [
-                StaleArtifactCandidate(
-                    id: candidateID,
-                    kind: .deviceSupportDirectory,
-                    title: "Stale Device Support: 16.4 (20E247)",
+            physicalDeviceSupportDirectories: [
+                PhysicalDeviceSupportDirectoryRecord(
+                    name: "16.4 (20E247)",
                     path: "/tmp/DeviceSupport/16.4 (20E247)",
-                    reclaimableBytes: 300,
-                    reason: "Older Device Support directory; newest two parsed versions are retained.",
-                    safetyClassification: .regenerable
+                    sizeInBytes: 300,
+                    modifiedAt: Date(timeIntervalSince1970: 600),
+                    parsedOSVersion: "16.4",
+                    parsedBuild: "20E247",
+                    parsedDescriptor: nil
                 ),
             ],
-            totalReclaimableBytes: 300,
-            notes: []
+            simulator: baseSnapshot.simulator,
+            runtimeTelemetry: baseSnapshot.runtimeTelemetry
         )
 
         let selection = DryRunSelection(
             selectedCategoryKinds: [.deviceSupport],
             selectedSimulatorDeviceUDIDs: [],
             selectedSimulatorRuntimeIdentifiers: [],
-            selectedStaleDeviceSupportCandidateIDs: [candidateID]
+            selectedPhysicalDeviceSupportDirectoryPaths: ["/tmp/DeviceSupport/16.4 (20E247)"]
         )
 
         let plan = DryRunPlanner.makePlan(
             snapshot: snapshot,
-            selection: selection,
-            staleArtifactReport: staleReport
+            selection: selection
         )
 
         #expect(plan.items.count == 1)
-        #expect(plan.items[0].kind == .staleDeviceSupport)
-        #expect(plan.items[0].staleArtifactID == candidateID)
+        #expect(plan.items[0].kind == .deviceSupportDirectory)
         #expect(plan.items[0].paths == ["/tmp/DeviceSupport/16.4 (20E247)"])
         #expect(plan.totalReclaimableBytes == 300)
         #expect(plan.notes.contains(where: { $0.contains("double counting") }))

@@ -95,6 +95,7 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
     private let activeDeveloperDirectoryProvider: ActiveDeveloperDirectoryProviding
     private let infoPlistReader: InfoPlistReading
     private let pathSizer: PathSizing
+    private let fileManager: FileManager
     private let homeDirectoryProvider: HomeDirectoryProviding
     private let runningApplicationsProvider: RunningApplicationsProviding
     private let simulatorListingProvider: SimulatorListingProviding
@@ -105,6 +106,7 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
         activeDeveloperDirectoryProvider: ActiveDeveloperDirectoryProviding = XcodeSelectActiveDeveloperDirectoryProvider(),
         infoPlistReader: InfoPlistReading = InfoPlistFileReader(),
         pathSizer: PathSizing = FileSystemPathSizer(),
+        fileManager: FileManager = .default,
         homeDirectoryProvider: HomeDirectoryProviding = CurrentUserHomeDirectoryProvider(),
         runningApplicationsProvider: RunningApplicationsProviding = SystemRunningApplicationsProvider(),
         simulatorListingProvider: SimulatorListingProviding = SimctlSimulatorListingProvider(),
@@ -114,6 +116,7 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
         self.activeDeveloperDirectoryProvider = activeDeveloperDirectoryProvider
         self.infoPlistReader = infoPlistReader
         self.pathSizer = pathSizer
+        self.fileManager = fileManager
         self.homeDirectoryProvider = homeDirectoryProvider
         self.runningApplicationsProvider = runningApplicationsProvider
         self.simulatorListingProvider = simulatorListingProvider
@@ -203,6 +206,7 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
 
         emitProgress(.sizingStorageCategories, 0.40, "Sizing storage categories")
         let storage = buildStorageUsage(installs: installs)
+        let physicalDeviceSupportDirectories = buildPhysicalDeviceSupportDirectories(from: storage)
         emitProgress(.sizingStorageCategories, 0.58, "Storage category sizing complete")
 
         emitProgress(.loadingSimulatorListing, 0.62, "Loading simulator device/runtime listing")
@@ -234,6 +238,7 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
             activeDeveloperDirectoryPath: activeDeveloperDirectoryPath,
             installs: installs,
             storage: storage,
+            physicalDeviceSupportDirectories: physicalDeviceSupportDirectories,
             simulator: simulatorInventory,
             runtimeTelemetry: runtimeTelemetry
         )
@@ -305,6 +310,89 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
         }
 
         return XcodeStorageUsage(categories: categories, totalBytes: totalBytes)
+    }
+
+    private func buildPhysicalDeviceSupportDirectories(
+        from storage: XcodeStorageUsage
+    ) -> [PhysicalDeviceSupportDirectoryRecord] {
+        let deviceSupportRoots = storage.categories
+            .filter { $0.kind == .deviceSupport }
+            .flatMap(\.paths)
+
+        var discovered: [(record: PhysicalDeviceSupportDirectoryRecord, parsed: ParsedPhysicalDeviceSupportDirectoryName)] = []
+        var seenPaths = Set<String>()
+        let resourceKeys: Set<URLResourceKey> = [.isDirectoryKey, .contentModificationDateKey]
+
+        for rootPath in deviceSupportRoots {
+            let rootURL = URL(filePath: rootPath, directoryHint: .isDirectory)
+            guard let childURLs = try? fileManager.contentsOfDirectory(
+                at: rootURL,
+                includingPropertiesForKeys: Array(resourceKeys),
+                options: [.skipsHiddenFiles]
+            ) else {
+                continue
+            }
+
+            for childURL in childURLs {
+                guard let values = try? childURL.resourceValues(forKeys: resourceKeys),
+                      values.isDirectory == true else {
+                    continue
+                }
+
+                let normalizedPath = normalizedPath(for: childURL) ?? childURL.path
+                guard seenPaths.insert(normalizedPath).inserted else {
+                    continue
+                }
+
+                let parsed = parsePhysicalDeviceSupportDirectoryName(childURL.lastPathComponent)
+                let sizeInBytes = pathSizer.fileExists(at: childURL) ? pathSizer.allocatedSize(at: childURL) : 0
+                discovered.append((
+                    record: PhysicalDeviceSupportDirectoryRecord(
+                        name: childURL.lastPathComponent,
+                        path: normalizedPath,
+                        sizeInBytes: sizeInBytes,
+                        modifiedAt: values.contentModificationDate,
+                        parsedOSVersion: parsed.osVersion,
+                        parsedBuild: parsed.build,
+                        parsedDescriptor: parsed.descriptor
+                    ),
+                    parsed: parsed
+                ))
+            }
+        }
+
+        discovered.sort { lhs, rhs in
+            if lhs.parsed.semanticVersion != rhs.parsed.semanticVersion {
+                switch (lhs.parsed.semanticVersion, rhs.parsed.semanticVersion) {
+                case let (left?, right?):
+                    if left != right {
+                        return left > right
+                    }
+                case (.some, .none):
+                    return true
+                case (.none, .some):
+                    return false
+                case (.none, .none):
+                    break
+                }
+            }
+            switch (lhs.record.modifiedAt, rhs.record.modifiedAt) {
+            case let (leftDate?, rightDate?) where leftDate != rightDate:
+                return leftDate > rightDate
+            case (.some, .none):
+                return true
+            case (.none, .some):
+                return false
+            default:
+                break
+            }
+            if lhs.record.name != rhs.record.name {
+                return lhs.record.name.localizedCaseInsensitiveCompare(rhs.record.name) == .orderedAscending
+            }
+            return lhs.record.path.localizedCaseInsensitiveCompare(rhs.record.path) == .orderedAscending
+        }
+
+        return discovered.map(\.record)
     }
 
     private func buildSimulatorInventory(from listing: SimulatorListing) -> SimulatorInventory {
@@ -521,6 +609,60 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
         return result
     }
 
+    private func parsePhysicalDeviceSupportDirectoryName(
+        _ name: String
+    ) -> ParsedPhysicalDeviceSupportDirectoryName {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return ParsedPhysicalDeviceSupportDirectoryName(
+                osVersion: nil,
+                build: nil,
+                descriptor: nil,
+                semanticVersion: nil
+            )
+        }
+
+        let versionPrefix = trimmed.prefix { character in
+            character.isNumber || character == "."
+        }
+        let osVersion: String? = versionPrefix.isEmpty ? nil : String(versionPrefix)
+        var remainder = osVersion.map { String(trimmed.dropFirst($0.count)) } ?? trimmed
+        remainder = remainder.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        var build: String?
+        if remainder.hasPrefix("("),
+           let closeIndex = remainder.firstIndex(of: ")") {
+            let valueStart = remainder.index(after: remainder.startIndex)
+            let rawBuild = remainder[valueStart..<closeIndex]
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !rawBuild.isEmpty {
+                build = String(rawBuild)
+            }
+            remainder = String(remainder[remainder.index(after: closeIndex)...])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        let descriptor = remainder.isEmpty ? nil : remainder
+        let semanticVersion = osVersion.flatMap(parseSemanticVersion(from:))
+
+        return ParsedPhysicalDeviceSupportDirectoryName(
+            osVersion: osVersion,
+            build: build,
+            descriptor: descriptor,
+            semanticVersion: semanticVersion
+        )
+    }
+
+    private func parseSemanticVersion(from value: String) -> PhysicalDeviceSupportSemanticVersion? {
+        let parts = value.split(separator: ".", omittingEmptySubsequences: true)
+        guard let major = parts.first.flatMap({ Int($0) }) else {
+            return nil
+        }
+        let minor = parts.count > 1 ? Int(parts[1]) ?? 0 : 0
+        let patch = parts.count > 2 ? Int(parts[2]) ?? 0 : 0
+        return PhysicalDeviceSupportSemanticVersion(major: major, minor: minor, patch: patch)
+    }
+
     private func normalizedPath(for url: URL?) -> String? {
         guard let url else {
             return nil
@@ -537,6 +679,29 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
         }
         return activeDeveloperDirectoryPath == installDeveloperDirectoryPath
             || activeDeveloperDirectoryPath.hasPrefix(installDeveloperDirectoryPath + "/")
+    }
+}
+
+private struct ParsedPhysicalDeviceSupportDirectoryName {
+    let osVersion: String?
+    let build: String?
+    let descriptor: String?
+    let semanticVersion: PhysicalDeviceSupportSemanticVersion?
+}
+
+private struct PhysicalDeviceSupportSemanticVersion: Comparable {
+    let major: Int
+    let minor: Int
+    let patch: Int
+
+    static func < (lhs: PhysicalDeviceSupportSemanticVersion, rhs: PhysicalDeviceSupportSemanticVersion) -> Bool {
+        if lhs.major != rhs.major {
+            return lhs.major < rhs.major
+        }
+        if lhs.minor != rhs.minor {
+            return lhs.minor < rhs.minor
+        }
+        return lhs.patch < rhs.patch
     }
 }
 

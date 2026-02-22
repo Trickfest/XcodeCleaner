@@ -125,6 +125,36 @@ public struct StorageCategoryUsage: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
+public struct PhysicalDeviceSupportDirectoryRecord: Codable, Equatable, Identifiable, Sendable {
+    public var id: String { path }
+
+    public let name: String
+    public let path: String
+    public let sizeInBytes: Int64
+    public let modifiedAt: Date?
+    public let parsedOSVersion: String?
+    public let parsedBuild: String?
+    public let parsedDescriptor: String?
+
+    public init(
+        name: String,
+        path: String,
+        sizeInBytes: Int64,
+        modifiedAt: Date?,
+        parsedOSVersion: String?,
+        parsedBuild: String?,
+        parsedDescriptor: String?
+    ) {
+        self.name = name
+        self.path = path
+        self.sizeInBytes = sizeInBytes
+        self.modifiedAt = modifiedAt
+        self.parsedOSVersion = parsedOSVersion
+        self.parsedBuild = parsedBuild
+        self.parsedDescriptor = parsedDescriptor
+    }
+}
+
 public struct SimulatorRuntimeRecord: Codable, Equatable, Identifiable, Sendable {
     public var id: String { identifier }
 
@@ -235,6 +265,7 @@ public struct XcodeInventorySnapshot: Codable, Equatable, Sendable {
     public let activeDeveloperDirectoryPath: String?
     public let installs: [XcodeInstall]
     public let storage: XcodeStorageUsage
+    public let physicalDeviceSupportDirectories: [PhysicalDeviceSupportDirectoryRecord]
     public let simulator: SimulatorInventory
     public let runtimeTelemetry: RuntimeTelemetry
 
@@ -243,6 +274,7 @@ public struct XcodeInventorySnapshot: Codable, Equatable, Sendable {
         activeDeveloperDirectoryPath: String?,
         installs: [XcodeInstall],
         storage: XcodeStorageUsage,
+        physicalDeviceSupportDirectories: [PhysicalDeviceSupportDirectoryRecord] = [],
         simulator: SimulatorInventory,
         runtimeTelemetry: RuntimeTelemetry
     ) {
@@ -250,6 +282,7 @@ public struct XcodeInventorySnapshot: Codable, Equatable, Sendable {
         self.activeDeveloperDirectoryPath = activeDeveloperDirectoryPath
         self.installs = installs
         self.storage = storage
+        self.physicalDeviceSupportDirectories = physicalDeviceSupportDirectories
         self.simulator = simulator
         self.runtimeTelemetry = runtimeTelemetry
     }
@@ -259,14 +292,14 @@ public struct DryRunSelection: Codable, Equatable, Sendable {
     public let selectedCategoryKinds: [StorageCategoryKind]
     public let selectedSimulatorDeviceUDIDs: [String]
     public let selectedSimulatorRuntimeIdentifiers: [String]
-    public let selectedStaleDeviceSupportCandidateIDs: [String]
+    public let selectedPhysicalDeviceSupportDirectoryPaths: [String]
     public let selectedXcodeInstallPaths: [String]
 
     public init(
         selectedCategoryKinds: [StorageCategoryKind],
         selectedSimulatorDeviceUDIDs: [String],
         selectedSimulatorRuntimeIdentifiers: [String] = [],
-        selectedStaleDeviceSupportCandidateIDs: [String] = [],
+        selectedPhysicalDeviceSupportDirectoryPaths: [String] = [],
         selectedXcodeInstallPaths: [String] = []
     ) {
         self.selectedCategoryKinds = Array(Set(selectedCategoryKinds)).sorted {
@@ -274,7 +307,12 @@ public struct DryRunSelection: Codable, Equatable, Sendable {
         }
         self.selectedSimulatorDeviceUDIDs = Array(Set(selectedSimulatorDeviceUDIDs)).sorted()
         self.selectedSimulatorRuntimeIdentifiers = Array(Set(selectedSimulatorRuntimeIdentifiers)).sorted()
-        self.selectedStaleDeviceSupportCandidateIDs = Array(Set(selectedStaleDeviceSupportCandidateIDs)).sorted()
+        self.selectedPhysicalDeviceSupportDirectoryPaths = Array(
+            Set(selectedPhysicalDeviceSupportDirectoryPaths.map {
+                URL(filePath: $0).standardizedFileURL.resolvingSymlinksInPath().path
+            })
+        )
+        .sorted()
         self.selectedXcodeInstallPaths = Array(Set(selectedXcodeInstallPaths)).sorted()
     }
 
@@ -282,18 +320,18 @@ public struct DryRunSelection: Codable, Equatable, Sendable {
         case selectedCategoryKinds
         case selectedSimulatorDeviceUDIDs
         case selectedSimulatorRuntimeIdentifiers
-        case selectedStaleDeviceSupportCandidateIDs
+        case selectedPhysicalDeviceSupportDirectoryPaths
         case selectedXcodeInstallPaths
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.init(
-            selectedCategoryKinds: try container.decode([StorageCategoryKind].self, forKey: .selectedCategoryKinds),
-            selectedSimulatorDeviceUDIDs: try container.decode([String].self, forKey: .selectedSimulatorDeviceUDIDs),
-            selectedSimulatorRuntimeIdentifiers: try container.decode([String].self, forKey: .selectedSimulatorRuntimeIdentifiers),
-            selectedStaleDeviceSupportCandidateIDs: try container.decode([String].self, forKey: .selectedStaleDeviceSupportCandidateIDs),
-            selectedXcodeInstallPaths: try container.decode([String].self, forKey: .selectedXcodeInstallPaths)
+            selectedCategoryKinds: try container.decodeIfPresent([StorageCategoryKind].self, forKey: .selectedCategoryKinds) ?? [],
+            selectedSimulatorDeviceUDIDs: try container.decodeIfPresent([String].self, forKey: .selectedSimulatorDeviceUDIDs) ?? [],
+            selectedSimulatorRuntimeIdentifiers: try container.decodeIfPresent([String].self, forKey: .selectedSimulatorRuntimeIdentifiers) ?? [],
+            selectedPhysicalDeviceSupportDirectoryPaths: try container.decodeIfPresent([String].self, forKey: .selectedPhysicalDeviceSupportDirectoryPaths) ?? [],
+            selectedXcodeInstallPaths: try container.decodeIfPresent([String].self, forKey: .selectedXcodeInstallPaths) ?? []
         )
     }
 
@@ -302,7 +340,7 @@ public struct DryRunSelection: Codable, Equatable, Sendable {
         try container.encode(selectedCategoryKinds, forKey: .selectedCategoryKinds)
         try container.encode(selectedSimulatorDeviceUDIDs, forKey: .selectedSimulatorDeviceUDIDs)
         try container.encode(selectedSimulatorRuntimeIdentifiers, forKey: .selectedSimulatorRuntimeIdentifiers)
-        try container.encode(selectedStaleDeviceSupportCandidateIDs, forKey: .selectedStaleDeviceSupportCandidateIDs)
+        try container.encode(selectedPhysicalDeviceSupportDirectoryPaths, forKey: .selectedPhysicalDeviceSupportDirectoryPaths)
         try container.encode(selectedXcodeInstallPaths, forKey: .selectedXcodeInstallPaths)
     }
 
@@ -310,7 +348,7 @@ public struct DryRunSelection: Codable, Equatable, Sendable {
         selectedCategoryKinds: [.derivedData, .archives, .deviceSupport],
         selectedSimulatorDeviceUDIDs: [],
         selectedSimulatorRuntimeIdentifiers: [],
-        selectedStaleDeviceSupportCandidateIDs: [],
+        selectedPhysicalDeviceSupportDirectoryPaths: [],
         selectedXcodeInstallPaths: []
     )
 }
@@ -319,6 +357,7 @@ public enum DryRunItemKind: String, Codable, Sendable {
     case storageCategory
     case simulatorDevice
     case simulatorRuntime
+    case deviceSupportDirectory
     case xcodeInstall
     case staleSimulatorRuntime
     case staleDeviceSupport

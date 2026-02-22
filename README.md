@@ -39,8 +39,9 @@ Implemented through Sprint 8, plus Sprint 9 reporting foundation:
 - Shared dry-run planner with deterministic item ordering and reclaim estimates.
 - Exact path previews for each dry-run item.
 - Selective simulator-device planning by UDID.
+- Selective per-directory physical Device Support planning by path.
 - Selective per-install Xcode planning by install path.
-- GUI dry-run section with category/device/Xcode-install selection and live plan preview.
+- GUI dry-run section with category/device/runtime/Xcode-install/physical-device-support selection and live plan preview.
 - CLI dry-run output mode via `--dry-run`, with `--plan-category`, `--plan-simulator-device`, and `--plan-xcode-install`.
 - Safe execution:
 - Shared cleanup execution engine with per-item action log records.
@@ -51,7 +52,7 @@ Implemented through Sprint 8, plus Sprint 9 reporting foundation:
 - Modification tools:
 - Active Xcode switching via `xcode-select` with verification/result reporting.
 - Stale artifact detection for simulator runtimes and Device Support directories.
-- GUI stale-artifact selection and cleanup execution.
+- GUI stale badges for simulator runtimes/devices to guide cleanup selection.
 - CLI stale-artifact listing/cleanup modes via `--list-stale-artifacts` and `--clean-stale-artifacts`.
 - CLI active-Xcode switch mode via `--switch-active-xcode <path>`.
 - Automation policies:
@@ -100,6 +101,23 @@ CLANG_MODULE_CACHE_PATH=$PWD/.build/clang-module-cache \
 SWIFTPM_MODULECACHE_OVERRIDE=$PWD/.build/swift-module-cache \
 swift run --disable-sandbox XcodeCleanerApp
 ```
+
+## Cleanup Scope Semantics
+
+- GUI category cleanup is aggregate for:
+  - `Derived Data`
+  - `MobileDevice Crash Logs`
+  - `Archives`
+  - `Simulator Data`
+- GUI itemized cleanup is explicit per-item for:
+  - Simulator runtimes
+  - Simulator devices
+  - Xcode installs
+  - Physical Device Support directories (`~/Library/Developer/Xcode/iOS DeviceSupport/*`)
+- GUI intentionally does not expose aggregate `Device Support` cleanup in the category checklist.
+- CLI keeps aggregate `deviceSupport` category behavior:
+  - `--plan-category deviceSupport` plans one-shot cleanup of all physical Device Support directories under the root.
+  - Use itemized GUI selection when you want fine-grained physical Device Support cleanup.
 
 Automation report examples:
 

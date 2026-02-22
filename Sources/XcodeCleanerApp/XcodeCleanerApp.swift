@@ -288,7 +288,7 @@ final class InventoryViewModel: ObservableObject {
             var policies = try automationStore.loadPolicies()
             let now = Date()
             let categories = categoryKinds.isEmpty
-                ? DryRunSelection.safeCategoryDefaults.selectedCategoryKinds
+                ? guiDefaultCleanupCategoryKinds
                 : categoryKinds
             let policy = AutomationPolicy(
                 name: trimmedName,
@@ -582,6 +582,11 @@ private func defaultAutomationStateDirectory() -> URL {
         .appendingPathComponent(".xcodecleaner", isDirectory: true)
 }
 
+private let guiDefaultCleanupCategoryKinds: [StorageCategoryKind] = [
+    .derivedData,
+    .archives,
+]
+
 private enum AppSection: String, CaseIterable, Identifiable {
     case overview
     case cleanup
@@ -619,19 +624,19 @@ private enum AppSection: String, CaseIterable, Identifiable {
 
 struct ContentView: View {
     @ObservedObject var viewModel: InventoryViewModel
-    @State private var selectedCategoryKinds: Set<StorageCategoryKind> = Set(DryRunSelection.safeCategoryDefaults.selectedCategoryKinds)
+    @State private var selectedCategoryKinds: Set<StorageCategoryKind> = Self.guiDefaultCategoryKinds
     @State private var selectedSimulatorDeviceUDIDs: Set<String> = []
     @State private var selectedSimulatorRuntimeIdentifiers: Set<String> = []
     @State private var selectedXcodeInstallPaths: Set<String> = []
     @State private var allowDirectDeleteFallback = false
     @State private var blockCleanupWhileToolsRunning = true
     @State private var selectedSwitchInstallPath: String = ""
-    @State private var selectedStaleDeviceSupportCandidateIDs: Set<String> = []
+    @State private var selectedPhysicalDeviceSupportDirectoryPaths: Set<String> = []
     @State private var newPolicyName = ""
     @State private var newPolicyEveryHours = ""
     @State private var newPolicyMinAgeDays = ""
     @State private var newPolicyMinTotalBytes = ""
-    @State private var newPolicyCategoryKinds: Set<StorageCategoryKind> = Set(DryRunSelection.safeCategoryDefaults.selectedCategoryKinds)
+    @State private var newPolicyCategoryKinds: Set<StorageCategoryKind> = Self.guiDefaultCategoryKinds
     @State private var newPolicySkipIfToolsRunning = true
     @State private var newPolicyAllowDirectDelete = false
     @State private var automationFormError: String?
@@ -879,24 +884,18 @@ struct ContentView: View {
     }
 
     private func cleanupWorkflowView(snapshot: XcodeInventorySnapshot) -> some View {
-        let staleArtifactReport = viewModel.staleArtifactReport
-        let staleDeviceSupportCandidates = (staleArtifactReport?.candidates ?? [])
-            .filter { $0.kind == .deviceSupportDirectory }
-        let staleDeviceSupportCandidateIDs = Set(staleDeviceSupportCandidates.map(\.id))
-        let selectedStaleDeviceSupportIDsForPlan = selectedStaleDeviceSupportCandidateIDs
-            .intersection(staleDeviceSupportCandidateIDs)
+        let physicalDeviceSupportDirectories = snapshot.physicalDeviceSupportDirectories
+        let physicalDeviceSupportPaths = Set(physicalDeviceSupportDirectories.map(\.path))
+        let selectedPhysicalDeviceSupportPathsForPlan = selectedPhysicalDeviceSupportDirectoryPaths
+            .intersection(physicalDeviceSupportPaths)
         let selection = DryRunSelection(
             selectedCategoryKinds: Array(selectedCategoryKinds),
             selectedSimulatorDeviceUDIDs: Array(selectedSimulatorDeviceUDIDs),
             selectedSimulatorRuntimeIdentifiers: Array(selectedSimulatorRuntimeIdentifiers),
-            selectedStaleDeviceSupportCandidateIDs: Array(selectedStaleDeviceSupportIDsForPlan),
+            selectedPhysicalDeviceSupportDirectoryPaths: Array(selectedPhysicalDeviceSupportPathsForPlan),
             selectedXcodeInstallPaths: Array(selectedXcodeInstallPaths)
         )
-        let plan = DryRunPlanner.makePlan(
-            snapshot: snapshot,
-            selection: selection,
-            staleArtifactReport: staleArtifactReport
-        )
+        let plan = DryRunPlanner.makePlan(snapshot: snapshot, selection: selection)
         let simulatorRuntimeByIdentifier = Dictionary(
             uniqueKeysWithValues: snapshot.simulator.runtimes.map { ($0.identifier, $0) }
         )
@@ -1046,10 +1045,12 @@ struct ContentView: View {
 
                     Text("Categories")
                         .font(.callout.weight(.medium))
-                    Text("Xcode app uninstall is managed in the Xcode Installs section below.")
+                    Text("Xcode app uninstall and physical-device support directory cleanup are managed in the itemized sections below.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    ForEach(snapshot.storage.categories.filter { $0.kind != .xcodeApplications }) { category in
+                    ForEach(snapshot.storage.categories.filter { category in
+                        category.kind != .xcodeApplications && category.kind != .deviceSupport
+                    }) { category in
                         Toggle(
                             isOn: Binding(
                                 get: { selectedCategoryKinds.contains(category.kind) },
@@ -1276,48 +1277,54 @@ struct ContentView: View {
                         }
                     }
 
-                    Text("Stale Physical Device Support Directories")
-                        .font(.callout.weight(.medium))
-                    Text("Physical-device support folders for real devices (not simulator data).")
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("Physical Device Support Directories")
+                            .font(.callout.weight(.medium))
+                        Text("Deletes selected version folders under iOS DeviceSupport (real-device support files).")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Text("Each selection removes that folder only; it does not remove Xcode or simulator runtimes.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    if staleDeviceSupportCandidates.isEmpty {
-                        Text("No stale Physical Device Support directories detected in this scan.")
+                    if physicalDeviceSupportDirectories.isEmpty {
+                        Text("No physical Device Support directories detected in this scan.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } else {
-                        ForEach(staleDeviceSupportCandidates) { candidate in
+                        ForEach(physicalDeviceSupportDirectories) { directory in
                             Toggle(
                                 isOn: Binding(
-                                    get: { selectedStaleDeviceSupportCandidateIDs.contains(candidate.id) },
+                                    get: { selectedPhysicalDeviceSupportDirectoryPaths.contains(directory.path) },
                                     set: { isSelected in
                                         if isSelected {
-                                            selectedStaleDeviceSupportCandidateIDs.insert(candidate.id)
+                                            selectedPhysicalDeviceSupportDirectoryPaths.insert(directory.path)
                                         } else {
-                                            selectedStaleDeviceSupportCandidateIDs.remove(candidate.id)
+                                            selectedPhysicalDeviceSupportDirectoryPaths.remove(directory.path)
                                         }
                                     }
                                 )
                             ) {
                                 HStack {
                                     VStack(alignment: .leading, spacing: 2) {
-                                        Text(candidate.title)
-                                        Text(candidate.reason)
+                                        Text(directory.name)
+                                        Text(physicalDeviceSupportDirectoryMetadata(directory, scannedAt: snapshot.scannedAt))
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
-                                        Text(candidate.path)
+                                        Text(directory.path)
                                             .font(.caption.monospaced())
                                             .foregroundStyle(.secondary)
                                             .textSelection(.enabled)
                                     }
                                     Spacer()
-                                    Text(formatBytes(candidate.reclaimableBytes))
+                                    Text(formatBytes(directory.sizeInBytes))
                                         .font(.callout.monospacedDigit())
                                         .foregroundStyle(.secondary)
                                 }
                             }
                         }
                     }
+
                 }
                 .padding(10)
                 .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
@@ -1518,7 +1525,10 @@ struct ContentView: View {
             Text("Categories")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
-            ForEach(StorageCategoryKind.allCases, id: \.rawValue) { kind in
+            Text("Device Support aggregate cleanup is CLI-only; GUI policies use explicit cleanup scope selection.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            ForEach(StorageCategoryKind.allCases.filter { $0 != .deviceSupport }, id: \.rawValue) { kind in
                 Toggle(
                     isOn: Binding(
                         get: { newPolicyCategoryKinds.contains(kind) },
@@ -2071,7 +2081,7 @@ struct ContentView: View {
         case .archives:
             return "Archived app builds"
         case .deviceSupport:
-            return "Physical-device support files"
+            return "All physical-device support folders (CLI aggregate mode)"
         case .simulatorData:
             return "CoreSimulator devices/caches/runtimes"
         }
@@ -2130,6 +2140,34 @@ struct ContentView: View {
             }
         }
         .joined(separator: ", ")
+    }
+
+    private func physicalDeviceSupportDirectoryMetadata(
+        _ directory: PhysicalDeviceSupportDirectoryRecord,
+        scannedAt: Date
+    ) -> String {
+        var segments: [String] = []
+        if let osVersion = directory.parsedOSVersion {
+            segments.append("OS Version: \(osVersion)")
+        }
+        if let build = directory.parsedBuild {
+            segments.append("Build: \(build)")
+        }
+        if let descriptor = directory.parsedDescriptor {
+            segments.append("Details: \(descriptor)")
+        }
+        if let modifiedAt = directory.modifiedAt {
+            segments.append("Modified: \(formatDateTime(modifiedAt))")
+            segments.append("Age: \(relativeAgeString(from: modifiedAt, referenceDate: scannedAt))")
+        } else {
+            segments.append("Modified: Unknown")
+        }
+        return segments.joined(separator: " | ")
+    }
+
+    private func relativeAgeString(from date: Date, referenceDate: Date) -> String {
+        let text = Self.relativeDateFormatter.localizedString(for: date, relativeTo: referenceDate)
+        return text.replacingOccurrences(of: "in 0 seconds", with: "just now")
     }
 
     private func isAutomationPolicyDueNow(_ policy: AutomationPolicy) -> Bool {
@@ -2199,6 +2237,14 @@ struct ContentView: View {
         formatter.timeStyle = .short
         return formatter
     }()
+
+    private static let relativeDateFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return formatter
+    }()
+
+    private static let guiDefaultCategoryKinds: Set<StorageCategoryKind> = Set(guiDefaultCleanupCategoryKinds)
 
     private func color(for safetyClassification: SafetyClassification) -> Color {
         switch safetyClassification {
