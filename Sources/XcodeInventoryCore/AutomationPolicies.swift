@@ -31,6 +31,7 @@ public struct AutomationPolicy: Codable, Equatable, Identifiable, Sendable {
     public var allowDirectDelete: Bool
     public let createdAt: Date
     public var updatedAt: Date
+    public var lastEvaluatedRunAt: Date?
     public var lastSuccessfulRunAt: Date?
 
     public init(
@@ -45,6 +46,7 @@ public struct AutomationPolicy: Codable, Equatable, Identifiable, Sendable {
         allowDirectDelete: Bool = false,
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
+        lastEvaluatedRunAt: Date? = nil,
         lastSuccessfulRunAt: Date? = nil
     ) {
         self.id = id
@@ -58,6 +60,7 @@ public struct AutomationPolicy: Codable, Equatable, Identifiable, Sendable {
         self.allowDirectDelete = allowDirectDelete
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.lastEvaluatedRunAt = lastEvaluatedRunAt
         self.lastSuccessfulRunAt = lastSuccessfulRunAt
     }
 }
@@ -80,6 +83,7 @@ public struct AutomationPolicyRunRecord: Codable, Equatable, Identifiable, Senda
     public let skippedReason: String?
     public let message: String
     public let totalReclaimedBytes: Int64
+    public let advancesSchedule: Bool
     public let executionReport: CleanupExecutionReport?
 
     public init(
@@ -93,6 +97,7 @@ public struct AutomationPolicyRunRecord: Codable, Equatable, Identifiable, Senda
         skippedReason: String?,
         message: String,
         totalReclaimedBytes: Int64,
+        advancesSchedule: Bool = false,
         executionReport: CleanupExecutionReport?
     ) {
         self.runID = runID
@@ -105,6 +110,7 @@ public struct AutomationPolicyRunRecord: Codable, Equatable, Identifiable, Senda
         self.skippedReason = skippedReason
         self.message = message
         self.totalReclaimedBytes = totalReclaimedBytes
+        self.advancesSchedule = advancesSchedule
         self.executionReport = executionReport
     }
 }
@@ -219,12 +225,25 @@ public enum AutomationPolicies {
                 guard hours > 0 else {
                     return false
                 }
-                guard let lastRun = policy.lastSuccessfulRunAt else {
+                guard let lastRun = policy.lastEvaluatedRunAt else {
                     return true
                 }
                 return now.timeIntervalSince(lastRun) >= Double(hours * 3600)
             }
         }
+    }
+
+    public static func applyRunRecord(_ record: AutomationPolicyRunRecord, to policy: AutomationPolicy) -> AutomationPolicy {
+        var updated = policy
+        if record.advancesSchedule {
+            updated.lastEvaluatedRunAt = record.finishedAt
+            updated.updatedAt = record.finishedAt
+        }
+        if record.status == .executed {
+            updated.lastSuccessfulRunAt = record.finishedAt
+            updated.updatedAt = record.finishedAt
+        }
+        return updated
     }
 }
 
@@ -255,7 +274,8 @@ public struct AutomationPolicyRunner: @unchecked Sendable {
                 policy: policy,
                 trigger: trigger,
                 startedAt: startedAt,
-                reason: "Policy is disabled."
+                reason: "Policy is disabled.",
+                advancesSchedule: false
             )
         }
 
@@ -264,7 +284,8 @@ public struct AutomationPolicyRunner: @unchecked Sendable {
                 policy: policy,
                 trigger: trigger,
                 startedAt: startedAt,
-                reason: reason
+                reason: reason,
+                advancesSchedule: false
             )
         }
 
@@ -279,7 +300,8 @@ public struct AutomationPolicyRunner: @unchecked Sendable {
                 policy: policy,
                 trigger: trigger,
                 startedAt: startedAt,
-                reason: "Policy produced no eligible cleanup items."
+                reason: "Policy produced no eligible cleanup items.",
+                advancesSchedule: true
             )
         }
 
@@ -288,7 +310,8 @@ public struct AutomationPolicyRunner: @unchecked Sendable {
                 policy: policy,
                 trigger: trigger,
                 startedAt: startedAt,
-                reason: "Policy minimum reclaim threshold not met (\(plan.totalReclaimableBytes) < \(minTotal))."
+                reason: "Policy minimum reclaim threshold not met (\(plan.totalReclaimableBytes) < \(minTotal)).",
+                advancesSchedule: true
             )
         }
 
@@ -314,6 +337,7 @@ public struct AutomationPolicyRunner: @unchecked Sendable {
             skippedReason: nil,
             message: "Run complete. Reclaimed \(executionReport.totalReclaimedBytes) bytes.",
             totalReclaimedBytes: executionReport.totalReclaimedBytes,
+            advancesSchedule: status == .executed,
             executionReport: executionReport
         )
     }
@@ -322,7 +346,8 @@ public struct AutomationPolicyRunner: @unchecked Sendable {
         policy: AutomationPolicy,
         trigger: AutomationTrigger,
         startedAt: Date,
-        reason: String
+        reason: String,
+        advancesSchedule: Bool
     ) -> AutomationPolicyRunRecord {
         AutomationPolicyRunRecord(
             policyID: policy.id,
@@ -334,6 +359,7 @@ public struct AutomationPolicyRunner: @unchecked Sendable {
             skippedReason: reason,
             message: reason,
             totalReclaimedBytes: 0,
+            advancesSchedule: advancesSchedule,
             executionReport: nil
         )
     }

@@ -390,10 +390,8 @@ final class InventoryViewModel: ObservableObject {
                 do {
                     var policies = try self.automationStore.loadPolicies()
                     try self.automationStore.appendRunHistory(record)
-                    if record.status == .executed,
-                       let index = policies.firstIndex(where: { $0.id == record.policyID }) {
-                        policies[index].lastSuccessfulRunAt = record.finishedAt
-                        policies[index].updatedAt = record.finishedAt
+                    if let index = policies.firstIndex(where: { $0.id == record.policyID }) {
+                        policies[index] = AutomationPolicies.applyRunRecord(record, to: policies[index])
                         try self.automationStore.savePolicies(policies)
                     }
                     self.automationStatusMessage = record.message
@@ -452,15 +450,14 @@ final class InventoryViewModel: ObservableObject {
                     var didExecute = false
                     for record in records {
                         try self.automationStore.appendRunHistory(record)
+                        if let index = policies.firstIndex(where: { $0.id == record.policyID }) {
+                            policies[index] = AutomationPolicies.applyRunRecord(record, to: policies[index])
+                        }
                         if record.status == .executed {
                             didExecute = true
-                            if let index = policies.firstIndex(where: { $0.id == record.policyID }) {
-                                policies[index].lastSuccessfulRunAt = record.finishedAt
-                                policies[index].updatedAt = record.finishedAt
-                            }
-                            if let report = record.executionReport {
-                                self.lastExecutionReport = report
-                            }
+                        }
+                        if let report = record.executionReport {
+                            self.lastExecutionReport = report
                         }
                     }
                     try self.automationStore.savePolicies(policies)
@@ -1408,7 +1405,7 @@ struct ContentView: View {
             .padding(8)
             .background(color(for: statusTone).opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
 
-            Text("Scheduling note: missed intervals do not queue. If a policy is overdue, \"Run Due Policies Now\" evaluates it once and then schedules from the latest successful run.")
+            Text("Scheduling note: missed intervals do not queue. If a policy is overdue, \"Run Due Policies Now\" evaluates it once and then schedules from the latest evaluation run.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
 
@@ -1482,7 +1479,10 @@ struct ContentView: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
-                        Text("Last successful run: \(formatDateTime(policy.lastSuccessfulRunAt))")
+                        Text("Last evaluation: \(formatDateTime(policy.lastEvaluatedRunAt))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("Last successful cleanup: \(formatDateTime(policy.lastSuccessfulRunAt))")
                             .font(.caption)
                             .foregroundStyle(.secondary)
 
@@ -2196,7 +2196,7 @@ struct ContentView: View {
         case .manualOnly:
             return "Manual only"
         case .everyHours(let hours):
-            if let lastRun = policy.lastSuccessfulRunAt {
+            if let lastRun = policy.lastEvaluatedRunAt {
                 let nextDue = lastRun.addingTimeInterval(Double(hours) * 3_600)
                 return "Every \(hours)h (next due: \(formatDateTime(nextDue)))"
             }

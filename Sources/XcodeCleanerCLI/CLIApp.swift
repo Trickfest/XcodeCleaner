@@ -219,11 +219,8 @@ struct XcodeCleanerCLIApp {
                 trigger: .manual
             )
             try store.appendRunHistory(record)
-            if record.status == .executed {
-                policies[policyIndex].lastSuccessfulRunAt = record.finishedAt
-                policies[policyIndex].updatedAt = record.finishedAt
-                try store.savePolicies(policies)
-            }
+            policies[policyIndex] = AutomationPolicies.applyRunRecord(record, to: policies[policyIndex])
+            try store.savePolicies(policies)
             try printEncoded(record, with: encoder, outputPath: options.outputPath)
             return record.status == .failed ? 1 : 0
         case .runDue:
@@ -246,10 +243,8 @@ struct XcodeCleanerCLIApp {
                 let record = runner.run(policy: policy, snapshot: snapshot, trigger: .scheduled)
                 records.append(record)
                 try store.appendRunHistory(record)
-                if record.status == .executed,
-                   let index = policies.firstIndex(where: { $0.id == policy.id }) {
-                    policies[index].lastSuccessfulRunAt = record.finishedAt
-                    policies[index].updatedAt = record.finishedAt
+                if let index = policies.firstIndex(where: { $0.id == policy.id }) {
+                    policies[index] = AutomationPolicies.applyRunRecord(record, to: policies[index])
                 }
                 if record.status == .failed {
                     didFail = true

@@ -11,6 +11,7 @@ struct AutomationPoliciesTests {
             name: "Due Policy",
             schedule: .everyHours(2),
             selection: DryRunSelection.safeCategoryDefaults,
+            lastEvaluatedRunAt: now.addingTimeInterval(-3 * 3_600),
             lastSuccessfulRunAt: now.addingTimeInterval(-3 * 3_600)
         )
         let notDuePolicy = AutomationPolicy(
@@ -18,6 +19,7 @@ struct AutomationPoliciesTests {
             name: "Not Due Policy",
             schedule: .everyHours(4),
             selection: DryRunSelection.safeCategoryDefaults,
+            lastEvaluatedRunAt: now.addingTimeInterval(-1 * 3_600),
             lastSuccessfulRunAt: now.addingTimeInterval(-1 * 3_600)
         )
         let manualPolicy = AutomationPolicy(
@@ -32,6 +34,7 @@ struct AutomationPoliciesTests {
             isEnabled: false,
             schedule: .everyHours(1),
             selection: DryRunSelection.safeCategoryDefaults,
+            lastEvaluatedRunAt: now.addingTimeInterval(-5 * 3_600),
             lastSuccessfulRunAt: now.addingTimeInterval(-5 * 3_600)
         )
 
@@ -75,6 +78,7 @@ struct AutomationPoliciesTests {
 
         #expect(record.status == .skipped)
         #expect(record.skippedReason?.contains("running tools") == true)
+        #expect(record.advancesSchedule == false)
         #expect(record.executionReport == nil)
     }
 
@@ -114,6 +118,7 @@ struct AutomationPoliciesTests {
         let record = runner.run(policy: policy, snapshot: snapshot, trigger: .manual)
 
         #expect(record.status == .executed)
+        #expect(record.advancesSchedule == true)
         #expect(record.totalReclaimedBytes == 256)
         #expect(record.executionReport?.succeededCount == 1)
     }
@@ -161,10 +166,12 @@ struct AutomationPoliciesTests {
         let thresholdRecord = runner.run(policy: thresholdPolicy, snapshot: snapshot, trigger: .manual)
         #expect(thresholdRecord.status == .skipped)
         #expect(thresholdRecord.message.contains("threshold") == true)
+        #expect(thresholdRecord.advancesSchedule == true)
 
         let ageRecord = runner.run(policy: agePolicy, snapshot: snapshot, trigger: .manual)
         #expect(ageRecord.status == .skipped)
         #expect(ageRecord.message.contains("no eligible cleanup items") == true)
+        #expect(ageRecord.advancesSchedule == true)
     }
 
     @Test("JSON automation policy store round-trips policies and run history")
@@ -181,13 +188,17 @@ struct AutomationPoliciesTests {
             id: "policy-1",
             name: "Nightly",
             schedule: .everyHours(12),
-            selection: DryRunSelection.safeCategoryDefaults
+            selection: DryRunSelection.safeCategoryDefaults,
+            lastEvaluatedRunAt: Date(timeIntervalSince1970: 900),
+            lastSuccessfulRunAt: Date(timeIntervalSince1970: 800)
         )
         try store.savePolicies([policy])
 
         let loadedPolicies = try store.loadPolicies()
         #expect(loadedPolicies.count == 1)
         #expect(loadedPolicies[0].id == "policy-1")
+        #expect(loadedPolicies[0].lastEvaluatedRunAt == Date(timeIntervalSince1970: 900))
+        #expect(loadedPolicies[0].lastSuccessfulRunAt == Date(timeIntervalSince1970: 800))
 
         let runRecord = AutomationPolicyRunRecord(
             runID: "run-1",
@@ -208,6 +219,7 @@ struct AutomationPoliciesTests {
         #expect(history.count == 1)
         #expect(history[0].runID == "run-1")
     }
+
 }
 
 private func makeAutomationSnapshot(
