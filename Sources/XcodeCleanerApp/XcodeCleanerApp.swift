@@ -1362,7 +1362,10 @@ struct ContentView: View {
     }
 
     private func automationOperationsPanel(duePolicyCount: Int) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let statusMessage = viewModel.automationStatusMessage
+        let statusTone = automationStatusTone(for: statusMessage, isExecuting: viewModel.isExecuting)
+
+        return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("Operations")
                     .font(.subheadline.weight(.semibold))
@@ -1388,8 +1391,25 @@ struct ContentView: View {
             }
             .foregroundStyle(.secondary)
 
-            Text(viewModel.automationStatusMessage)
-                .font(.caption)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Image(systemName: automationStatusSymbol(for: statusTone))
+                        .foregroundStyle(color(for: statusTone))
+                    Text("Status")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(color(for: statusTone))
+                    Spacer()
+                }
+                Text(statusMessage)
+                    .font(.caption)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(8)
+            .background(color(for: statusTone).opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+
+            Text("Scheduling note: missed intervals do not queue. If a policy is overdue, \"Run Due Policies Now\" evaluates it once and then schedules from the latest successful run.")
+                .font(.caption2)
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 8) {
@@ -2285,6 +2305,75 @@ struct ContentView: View {
         case .skipped:
             return .orange
         case .failed:
+            return .red
+        }
+    }
+
+    private enum AutomationStatusTone {
+        case active
+        case success
+        case warning
+        case neutral
+        case failure
+    }
+
+    private func automationStatusTone(for message: String, isExecuting: Bool) -> AutomationStatusTone {
+        if isExecuting {
+            return .active
+        }
+
+        let normalized = message.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if normalized.contains("failed") || normalized.contains("error") {
+            return .failure
+        }
+        if normalized.contains("skipped") {
+            return .warning
+        }
+        if normalized.contains("finished")
+            || normalized.contains("complete")
+            || normalized.contains("created")
+            || normalized.contains("deleted")
+            || normalized.contains("enabled")
+            || normalized.contains("disabled")
+            || normalized.contains("exported")
+            || normalized.contains("reclaimed") {
+            return .success
+        }
+        if normalized.contains("no due")
+            || normalized.contains("no automation")
+            || normalized.contains("no scan snapshot")
+            || normalized.contains("no export") {
+            return .neutral
+        }
+        return .neutral
+    }
+
+    private func automationStatusSymbol(for tone: AutomationStatusTone) -> String {
+        switch tone {
+        case .active:
+            return "clock.arrow.circlepath"
+        case .success:
+            return "checkmark.circle.fill"
+        case .warning:
+            return "exclamationmark.triangle.fill"
+        case .neutral:
+            return "info.circle.fill"
+        case .failure:
+            return "xmark.octagon.fill"
+        }
+    }
+
+    private func color(for tone: AutomationStatusTone) -> Color {
+        switch tone {
+        case .active:
+            return .blue
+        case .success:
+            return .green
+        case .warning:
+            return .orange
+        case .neutral:
+            return .secondary
+        case .failure:
             return .red
         }
     }
