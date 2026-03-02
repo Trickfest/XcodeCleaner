@@ -2,79 +2,59 @@
 
 Native macOS tooling (Swift + SwiftUI) to inventory, understand, and clean Xcode-related disk usage.
 
+## Version
+
+- Current pre-release: `0.90`
+- Target: `1.0`
+
+This project is close to the `1.0` scope but still in pre-release iteration.
+
 ## Distribution Model
 
 Current distribution is source-first:
 - Clone the repo.
-- Build locally with SwiftPM/Xcode.
-- Run the CLI binary and/or app from local build outputs.
+- Build locally with SwiftPM or Xcode.
+- Run the CLI and/or GUI from local build outputs.
 
-Prebuilt signed/notarized artifact distribution is optional future work, not required for current V1 usage.
+Prebuilt signed/notarized distribution is optional future work, not required for current usage.
 
-## Sprint Status
+## Current Capabilities
 
-Implemented through Sprint 8, plus Sprint 9 reporting foundation:
-- Read-only Xcode installation inventory scanner.
-- Active developer directory detection (`xcode-select -p`).
-- Read-only storage accounting for:
-- Xcode application bundles.
-- DerivedData.
-- MobileDevice Crash Logs.
-- Archives.
-- iOS DeviceSupport.
-- Simulator data (devices, caches, runtimes path).
-- Ownership attribution and safety classification for storage categories and simulator artifacts.
+- Read-only inventory and accounting:
+  - Xcode installs, active developer directory, version/build/path.
+  - Storage categories: Xcode apps, Derived Data, MobileDevice Crash Logs, Archives, iOS Device Support, Simulator data.
+  - Itemized simulator runtimes and devices (with metadata and size).
+  - Itemized physical Device Support directories (with metadata and size).
 - Runtime telemetry:
-- Per-Xcode running instance count.
-- Per-simulator-device running/booted state and instance count.
-- Itemized simulator inventory:
-- Per runtime metadata and size.
-- Per device metadata and size.
-- Scan progress instrumentation:
-- Shared scan phases and monotonic progress events from core scanner.
-- GUI progress bar with percentage and current phase/status message.
-- CLI progress/status output on stderr while keeping final JSON on stdout.
-- CLI `--no-progress` switch to suppress progress output when desired.
-- Dry-run planning:
-- Shared dry-run planner with deterministic item ordering and reclaim estimates.
-- Exact path previews for each dry-run item.
-- Selective simulator-device planning by UDID.
-- Selective per-directory physical Device Support planning by path.
-- Selective per-install Xcode planning by install path.
-- GUI dry-run section with category/device/runtime/Xcode-install/physical-device-support selection and live plan preview.
-- CLI dry-run output mode via `--dry-run`, with `--plan-category`, `--plan-simulator-device`, and `--plan-xcode-install`.
-- Safe execution:
-- Shared cleanup execution engine with per-item action log records.
-- Move-to-trash first with optional direct-delete fallback.
-- Guardrails for active/running Xcode installs and booted/running simulator devices.
-- GUI execute flow with per-item success/blocked/failed feedback.
-- CLI execute mode via `--execute` with machine-readable execution report JSON.
-- Modification tools:
-- Active Xcode switching via `xcode-select` with verification/result reporting.
-- Stale artifact detection for simulator runtimes and Device Support directories.
-- GUI stale badges for simulator runtimes/devices to guide cleanup selection.
-- CLI stale-artifact listing/cleanup modes via `--list-stale-artifacts` and `--clean-stale-artifacts`.
-- CLI active-Xcode switch mode via `--switch-active-xcode <path>`.
-- Automation policies:
-- Shared automation policy model with schedule, category, age, and reclaim-threshold rules.
-- Guarded automation execution that can skip when Xcode/Simulator tools are running.
-- CLI automation workflows via `automation list|create|run|run-due|history`.
-- SwiftUI automation section for policy create/enable/disable/delete, manual run, run-due, recent run history, and trend summaries.
-- Sprint 9 reporting foundation:
-- Shared automation trend summaries (7-day and 30-day windows by default).
-- Shared CSV export for automation history and trends.
-- CLI export workflows:
-- `automation history --format json|csv [--output <path>]`
-- `automation trends --format json|csv [--days <n> ...] [--output <path>]`
-- Report schema documentation in `docs/REPORT_SCHEMA.md`.
-- Release smoke checklist in `docs/RELEASE_SMOKE_CHECKLIST.md`.
-- Release artifact build helper: `scripts/build_release_artifacts.sh` (outputs `dist/`).
-- Optional future notarization helper (requires credentials): `scripts/notarize_release.sh`.
-- GUI export actions for automation history/trends to `~/.xcodecleaner/exports`.
-- SwiftUI app shell showing inventory and storage totals.
-- CLI JSON output with inventory and storage models.
-- Unit tests for multi-Xcode discovery, storage categorization, telemetry, simulator itemization, progress phase ordering, dry-run planning, cleanup execution guardrails, active-Xcode switching, stale-artifact workflows, and automation policy execution/storage logic.
-- Unit tests for automation history/trend reporting and CSV export formatting.
+  - Running Xcode instance count.
+  - Running Simulator app instance count.
+  - Per-device simulator state/instance count.
+- Shared scan progress:
+  - GUI progress bar with phase/message.
+  - CLI progress output on stderr with final JSON output on stdout.
+  - CLI `--no-progress` support.
+- Cleanup planning and execution:
+  - Shared dry-run planning with deterministic ordering and reclaim estimates.
+  - Move-to-trash first, with optional direct-delete fallback.
+  - Guardrails for active/running Xcode installs and running/booted simulator devices.
+  - Optional global block while Xcode/Simulator tools are running.
+- Targeted cleanup controls:
+  - GUI itemized selection for simulator runtimes/devices, Xcode installs, and physical Device Support directories.
+  - CLI selectors for categories/devices/Xcode installs plus stale-artifact selection.
+- Active Xcode switching:
+  - GUI and CLI support using `xcode-select` with result verification.
+- Stale artifact workflows:
+  - Stale detection for simulator runtimes/devices and physical Device Support directories.
+  - GUI stale badges/labels and explicit selection.
+  - CLI list/clean modes.
+- Automation:
+  - Policy create/list/enable/disable/delete and manual/scheduled evaluation.
+  - Age and reclaim-threshold filters.
+  - Optional skip when tools are running.
+  - Shared run history and trend summaries.
+- Reports:
+  - JSON/CSV export for automation history and trends in GUI and CLI.
+  - Schema documentation: `docs/REPORT_SCHEMA.md`.
 
 ## Quick Start
 
@@ -86,7 +66,7 @@ SWIFTPM_MODULECACHE_OVERRIDE=$PWD/.build/swift-module-cache \
 swift test --disable-sandbox
 ```
 
-Run CLI inventory output:
+Run CLI (inventory JSON):
 
 ```bash
 CLANG_MODULE_CACHE_PATH=$PWD/.build/clang-module-cache \
@@ -94,13 +74,33 @@ SWIFTPM_MODULECACHE_OVERRIDE=$PWD/.build/swift-module-cache \
 swift run --disable-sandbox xcodecleaner-cli
 ```
 
-Run SwiftUI app shell:
+Run GUI app:
 
 ```bash
 CLANG_MODULE_CACHE_PATH=$PWD/.build/clang-module-cache \
 SWIFTPM_MODULECACHE_OVERRIDE=$PWD/.build/swift-module-cache \
 swift run --disable-sandbox XcodeCleanerApp
 ```
+
+## CLI Overview
+
+Primary modes:
+- Inventory/dry-run/execute:
+  - `xcodecleaner-cli`
+  - `xcodecleaner-cli --dry-run ...`
+  - `xcodecleaner-cli --execute ...`
+- Stale artifacts:
+  - `xcodecleaner-cli --list-stale-artifacts`
+  - `xcodecleaner-cli --clean-stale-artifacts [--stale-artifact <id> ...]`
+- Active Xcode switch:
+  - `xcodecleaner-cli --switch-active-xcode <path>`
+- Automation:
+  - `xcodecleaner-cli automation list`
+  - `xcodecleaner-cli automation create --name <name> ...`
+  - `xcodecleaner-cli automation run --id <policy-id>`
+  - `xcodecleaner-cli automation run-due`
+  - `xcodecleaner-cli automation history [--limit <n>] [--format json|csv] [--output <path>]`
+  - `xcodecleaner-cli automation trends [--days <n> ...] [--format json|csv] [--output <path>]`
 
 ## Cleanup Scope Semantics
 
@@ -117,9 +117,19 @@ swift run --disable-sandbox XcodeCleanerApp
 - GUI intentionally does not expose aggregate `Device Support` cleanup in the category checklist.
 - CLI keeps aggregate `deviceSupport` category behavior:
   - `--plan-category deviceSupport` plans one-shot cleanup of all physical Device Support directories under the root.
-  - Use itemized GUI selection when you want fine-grained physical Device Support cleanup.
+  - Use GUI itemized selection when you want fine-grained physical Device Support cleanup.
 
-Automation report examples:
+## Automation and Report State
+
+- Default shared state directory: `~/.xcodecleaner`
+- Files:
+  - `automation-policies.json`
+  - `automation-run-history.json`
+  - `exports/`
+- GUI and CLI share this state by default.
+- CLI can override state location via `XCODECLEANER_STATE_DIR`.
+
+Report examples:
 
 ```bash
 CLANG_MODULE_CACHE_PATH=$PWD/.build/clang-module-cache \

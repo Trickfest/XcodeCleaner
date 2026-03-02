@@ -664,7 +664,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("XcodeCleaner")
                     .font(.largeTitle.bold())
-                Text("Sprint 10: UI consolidation")
+                Text("Version 0.90")
                     .foregroundStyle(.secondary)
             }
             Spacer()
