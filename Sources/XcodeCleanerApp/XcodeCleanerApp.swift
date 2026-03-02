@@ -1488,10 +1488,13 @@ struct ContentView: View {
             Text("Categories")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
-            Text("Device Support aggregate cleanup is CLI-only; GUI policies use explicit cleanup scope selection.")
+            Text("Aggregate Xcode Applications and Device Support cleanup are CLI-only; GUI policies use explicit cleanup scope selection.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
-            ForEach(StorageCategoryKind.allCases.filter { $0 != .deviceSupport }, id: \.rawValue) { kind in
+            ForEach(
+                StorageCategoryKind.allCases.filter { $0 != .deviceSupport && $0 != .xcodeApplications },
+                id: \.rawValue
+            ) { kind in
                 Toggle(
                     isOn: Binding(
                         get: { newPolicyCategoryKinds.contains(kind) },
@@ -2000,9 +2003,12 @@ struct ContentView: View {
         }
 
         automationFormError = nil
+        let allowedCategoryKinds = newPolicyCategoryKinds.filter { kind in
+            kind != .xcodeApplications && kind != .deviceSupport
+        }
         viewModel.createAutomationPolicy(
             name: trimmedName,
-            categoryKinds: Array(newPolicyCategoryKinds).sorted { $0.rawValue < $1.rawValue },
+            categoryKinds: Array(allowedCategoryKinds).sorted { $0.rawValue < $1.rawValue },
             everyHours: everyHoursResult.value,
             minAgeDays: minAgeDaysResult.value,
             minTotalReclaimBytes: minBytesResult.value,
