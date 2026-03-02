@@ -327,11 +327,11 @@ public struct DryRunSelection: Codable, Equatable, Sendable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.init(
-            selectedCategoryKinds: try container.decodeIfPresent([StorageCategoryKind].self, forKey: .selectedCategoryKinds) ?? [],
-            selectedSimulatorDeviceUDIDs: try container.decodeIfPresent([String].self, forKey: .selectedSimulatorDeviceUDIDs) ?? [],
-            selectedSimulatorRuntimeIdentifiers: try container.decodeIfPresent([String].self, forKey: .selectedSimulatorRuntimeIdentifiers) ?? [],
-            selectedPhysicalDeviceSupportDirectoryPaths: try container.decodeIfPresent([String].self, forKey: .selectedPhysicalDeviceSupportDirectoryPaths) ?? [],
-            selectedXcodeInstallPaths: try container.decodeIfPresent([String].self, forKey: .selectedXcodeInstallPaths) ?? []
+            selectedCategoryKinds: try container.decode([StorageCategoryKind].self, forKey: .selectedCategoryKinds),
+            selectedSimulatorDeviceUDIDs: try container.decode([String].self, forKey: .selectedSimulatorDeviceUDIDs),
+            selectedSimulatorRuntimeIdentifiers: try container.decode([String].self, forKey: .selectedSimulatorRuntimeIdentifiers),
+            selectedPhysicalDeviceSupportDirectoryPaths: try container.decode([String].self, forKey: .selectedPhysicalDeviceSupportDirectoryPaths),
+            selectedXcodeInstallPaths: try container.decode([String].self, forKey: .selectedXcodeInstallPaths)
         )
     }
 
