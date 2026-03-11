@@ -11,13 +11,16 @@ Guidance for coding agents working in this repository.
 - Distribution model: source-first (clone + local build). Signing/notarization is optional future work, not a current gate.
 
 ## Current Planning Context
-- Sprint-based delivery with incremental value each chunk.
-- Sprint 10 focus: UI organization and workflow clarity.
+- Work in small, reviewable chunks with incremental value.
+- Current sequencing:
+  - Keep the GUI codebase organized and workflow-oriented.
+  - Update docs after structural changes.
+  - Do packaging/icon/release work after the codebase and docs are aligned.
 - Keep CLI and GUI parity for shared capabilities when technically applicable.
 
 ## Required Workflow
 - Do not commit or push unless the user explicitly asks.
-- For chunked sprint work:
+- For chunked work:
 - Implement chunk.
 - Run tests.
 - Provide a concise review checklist.
@@ -65,10 +68,16 @@ swift run --disable-sandbox XcodeCleanerApp
 - `Package.swift`: package/products/targets.
 - `Sources/XcodeInventoryCore/*`: scanner, models, planning, execution, automation core.
 - `Sources/XcodeCleanerCLI/*`: CLI modes, options, output/progress behavior.
-- `Sources/XcodeCleanerApp/XcodeCleanerApp.swift`: SwiftUI app shell and section views (currently centralized).
-- `docs/IMPLEMENTATION_ROADMAP.md`: sprint roadmap.
-- `docs/SPRINT_10.md`: current sprint chunk plan and acceptance criteria.
+- `Sources/XcodeCleanerApp/XcodeCleanerApp.swift`: app entry point.
+- `Sources/XcodeCleanerApp/App/*`: app lifecycle helpers.
+- `Sources/XcodeCleanerApp/ViewModels/*`: GUI state coordination.
+- `Sources/XcodeCleanerApp/Views/Sections/*`: workflow-specific section views.
+- `Sources/XcodeCleanerApp/Views/Components/*`: shared app UI panels.
+- `Sources/XcodeCleanerApp/State/*`: app-only form and selection state.
+- `Sources/XcodeCleanerApp/Support/*`: app-only presentation helpers and section metadata.
+- `docs/DEVELOPMENT_TODO.md`: current milestone ordering and release-adjacent follow-up work.
+- `docs/REPORT_SCHEMA.md`: report/export schema details.
 
 ## Documentation Expectations
-- Update sprint docs/roadmap when scope or sprint ordering changes.
+- Update `README.md`, `AGENTS.md`, and `docs/DEVELOPMENT_TODO.md` when structure or milestone ordering changes.
 - Keep release/readme docs aligned with implemented behavior (especially GUI/CLI parity and distribution assumptions).

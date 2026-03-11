@@ -18,6 +18,21 @@ Current distribution is source-first:
 
 Prebuilt signed/notarized distribution is optional future work, not required for current usage.
 
+## Source Layout
+
+- `Sources/XcodeInventoryCore/`
+  - Shared inventory, planning, execution, automation, and reporting logic used by both app surfaces.
+- `Sources/XcodeCleanerCLI/`
+  - CLI entry points, option parsing, output formatting, and progress rendering.
+- `Sources/XcodeCleanerApp/`
+  - `XcodeCleanerApp.swift`: app entry point.
+  - `App/`: app lifecycle helpers such as launch activation.
+  - `ViewModels/`: GUI state coordination (`InventoryViewModel`).
+  - `Views/Sections/`: workflow-oriented sections (`Overview`, `Cleanup`, `Automation`, `Reports`).
+  - `Views/Components/`: shared SwiftUI panels used across sections.
+  - `State/`: app-only form and selection state.
+  - `Support/`: app-only presentation helpers, formatting, and section metadata.
+
 ## Current Capabilities
 
 - Read-only inventory and accounting:
@@ -140,3 +155,10 @@ CLANG_MODULE_CACHE_PATH=$PWD/.build/clang-module-cache \
 SWIFTPM_MODULECACHE_OVERRIDE=$PWD/.build/swift-module-cache \
 swift run --disable-sandbox xcodecleaner-cli automation trends --format json
 ```
+
+## Near-Term Roadmap
+
+- Finish GUI packaging work now that the app target is organized into section-specific files.
+- Add the app icon and packaging-facing polish after the bundle workflow is in place.
+- Run a packaging-aware GUI QA and documentation pass before making the repository public.
+- Cut the `1.0` release after packaging, docs, and QA are aligned.
