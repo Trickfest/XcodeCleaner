@@ -13,8 +13,8 @@ This project is close to the `1.0` scope but still in pre-release iteration.
 
 Current distribution is source-first:
 - Clone the repo.
-- Build locally with SwiftPM or Xcode.
-- Run the CLI and/or GUI from local build outputs.
+- Build locally with SwiftPM or the included Xcode project.
+- Run the CLI from SwiftPM or launch the bundled GUI app from the Xcode build output.
 
 Prebuilt signed/notarized distribution is optional future work, not required for current usage.
 
@@ -32,6 +32,12 @@ Prebuilt signed/notarized distribution is optional future work, not required for
   - `Views/Components/`: shared SwiftUI panels used across sections.
   - `State/`: app-only form and selection state.
   - `Support/`: app-only presentation helpers, formatting, and section metadata.
+- `XcodeCleaner.xcodeproj/`
+  - Native macOS app project for bundle metadata, icon integration, and source-first GUI packaging.
+- `Xcode/XcodeCleanerApp/`
+  - `Info.plist` plus `Assets.xcassets` for the bundled GUI app target.
+- `Scripts/build-xcodecleaner-app.sh`
+  - Repeatable `xcodebuild` wrapper that produces `XcodeCleaner.app` under `.build/xcode/`.
 
 ## Current Capabilities
 
@@ -97,6 +103,26 @@ SWIFTPM_MODULECACHE_OVERRIDE=$PWD/.build/swift-module-cache \
 swift run --disable-sandbox XcodeCleanerApp
 ```
 
+Build the bundled macOS GUI app:
+
+```bash
+Scripts/build-xcodecleaner-app.sh
+```
+
+This defaults to an Apple Silicon build (`arm64`).
+
+If you need an Intel build on an older Mac, pass the architecture explicitly:
+
+```bash
+Scripts/build-xcodecleaner-app.sh --arch x86_64
+```
+
+The packaged app bundle is written to:
+
+```bash
+.build/xcode/Build/Products/Release/XcodeCleaner.app
+```
+
 ## CLI Overview
 
 Primary modes:
@@ -158,7 +184,7 @@ swift run --disable-sandbox xcodecleaner-cli automation trends --format json
 
 ## Near-Term Roadmap
 
-- Finish GUI packaging work now that the app target is organized into section-specific files.
-- Add the app icon and packaging-facing polish after the bundle workflow is in place.
-- Run a packaging-aware GUI QA and documentation pass before making the repository public.
-- Cut the `1.0` release after packaging, docs, and QA are aligned.
+- Run a packaging-aware GUI QA and documentation pass now that the bundled app path is in place.
+- Make the repository public on GitHub once the packaged app workflow is fully reviewed.
+- Decide whether signing/notarization should be included before the `1.0` release.
+- Cut the `1.0` release after QA, docs, and release packaging decisions are aligned.

@@ -4,7 +4,7 @@ Guidance for coding agents working in this repository.
 
 ## Project Summary
 - Product: `XcodeCleaner`
-- Language/stack: Swift + SwiftUI (macOS 14+), SwiftPM
+- Language/stack: Swift + SwiftUI (macOS 14+), SwiftPM + Xcode project for GUI packaging
 - Deliverables:
 - `XcodeCleanerApp` (GUI)
 - `xcodecleaner-cli` (CLI)
@@ -64,8 +64,17 @@ SWIFTPM_MODULECACHE_OVERRIDE=$PWD/.build/swift-module-cache \
 swift run --disable-sandbox XcodeCleanerApp
 ```
 
+- Build the bundled GUI app:
+
+```bash
+Scripts/build-xcodecleaner-app.sh
+```
+
 ## Key Files
 - `Package.swift`: package/products/targets.
+- `XcodeCleaner.xcodeproj`: macOS app project for the bundled GUI target.
+- `Xcode/XcodeCleanerApp/*`: bundle metadata and `Assets.xcassets` for the GUI app.
+- `Scripts/build-xcodecleaner-app.sh`: repeatable `xcodebuild` wrapper for `XcodeCleaner.app`.
 - `Sources/XcodeInventoryCore/*`: scanner, models, planning, execution, automation core.
 - `Sources/XcodeCleanerCLI/*`: CLI modes, options, output/progress behavior.
 - `Sources/XcodeCleanerApp/XcodeCleanerApp.swift`: app entry point.
