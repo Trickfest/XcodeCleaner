@@ -12,6 +12,9 @@ final class InventoryViewModel: ObservableObject {
     @Published private(set) var isExecuting = false
     @Published private(set) var lastExecutionReport: CleanupExecutionReport?
     @Published private(set) var executionStatusMessage = "No cleanup executed yet."
+    @Published private(set) var staleArtifactReport: StaleArtifactReport?
+    @Published private(set) var lastStaleArtifactExecutionReport: CleanupExecutionReport?
+    @Published private(set) var staleArtifactStatusMessage = "No stale/orphaned artifact cleanup executed yet."
     @Published private(set) var lastXcodeSwitchResult: ActiveXcodeSwitchResult?
     @Published private(set) var switchStatusMessage = "No active-Xcode switch executed yet."
     @Published private(set) var automationPolicies: [AutomationPolicy] = []
@@ -23,6 +26,7 @@ final class InventoryViewModel: ObservableObject {
 
     private let scanner: XcodeInventoryScanner
     private let cleanupExecutor: CleanupExecutor
+    private let staleArtifactDetector: StaleArtifactDetector
     private let activeXcodeSwitcher: ActiveXcodeSwitcher
     private let automationStore: any AutomationPolicyStoring
     private let automationRunner: AutomationPolicyRunner
@@ -31,6 +35,7 @@ final class InventoryViewModel: ObservableObject {
     init(
         scanner: XcodeInventoryScanner = XcodeInventoryScanner(),
         cleanupExecutor: CleanupExecutor = CleanupExecutor(),
+        staleArtifactDetector: StaleArtifactDetector = StaleArtifactDetector(),
         activeXcodeSwitcher: ActiveXcodeSwitcher = ActiveXcodeSwitcher(),
         automationStore: any AutomationPolicyStoring = JSONAutomationPolicyStore(
             stateDirectoryURL: defaultAutomationStateDirectory()
@@ -39,6 +44,7 @@ final class InventoryViewModel: ObservableObject {
     ) {
         self.scanner = scanner
         self.cleanupExecutor = cleanupExecutor
+        self.staleArtifactDetector = staleArtifactDetector
         self.activeXcodeSwitcher = activeXcodeSwitcher
         self.automationStore = automationStore
         self.automationRunner = automationRunner
@@ -59,6 +65,7 @@ final class InventoryViewModel: ObservableObject {
         let scanID = UUID()
         activeScanID = scanID
         let scanner = self.scanner
+        let staleArtifactDetector = self.staleArtifactDetector
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let snapshot = scanner.scan { progress in
@@ -71,12 +78,14 @@ final class InventoryViewModel: ObservableObject {
                     self.scanMessage = progress.message
                 }
             }
+            let staleArtifactReport = staleArtifactDetector.detect(snapshot: snapshot)
 
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.activeScanID == scanID else {
                     return
                 }
                 self.snapshot = snapshot
+                self.staleArtifactReport = staleArtifactReport
                 self.scanProgressFraction = 1
                 self.scanPhaseTitle = ScanPhase.finalizingSnapshot.title
                 self.scanMessage = "Scan complete"
@@ -131,6 +140,60 @@ final class InventoryViewModel: ObservableObject {
                 }
                 self.lastExecutionReport = report
                 self.executionStatusMessage = "Cleanup complete. Reclaimed \(ByteCountFormatter.string(fromByteCount: report.totalReclaimedBytes, countStyle: .file))."
+                self.isExecuting = false
+                self.reload()
+            }
+        }
+    }
+
+    func executeStaleArtifactCleanup(
+        selectedCandidateIDs: [String],
+        allowDirectDelete: Bool,
+        requireToolsStopped: Bool
+    ) {
+        guard let snapshot else {
+            staleArtifactStatusMessage = "No scan snapshot available for stale/orphaned artifact cleanup."
+            return
+        }
+        guard !isExecuting else {
+            return
+        }
+
+        let report = staleArtifactReport ?? staleArtifactDetector.detect(snapshot: snapshot)
+        let plan = StaleArtifactPlanner.makePlan(
+            snapshot: snapshot,
+            report: report,
+            selectedCandidateIDs: selectedCandidateIDs,
+            now: Date(),
+            defaultToAllCandidatesWhenSelectionEmpty: false
+        )
+        guard !plan.items.isEmpty else {
+            staleArtifactStatusMessage = "No stale/orphaned artifacts selected for cleanup."
+            return
+        }
+
+        isExecuting = true
+        staleArtifactStatusMessage = "Executing stale/orphaned artifact cleanup..."
+        let executor = cleanupExecutor
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let executionReport = executor.execute(
+                snapshot: snapshot,
+                plan: plan,
+                allowDirectDelete: allowDirectDelete,
+                requireToolsStopped: requireToolsStopped
+            )
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self else {
+                    return
+                }
+                self.lastStaleArtifactExecutionReport = executionReport
+                if let skippedReason = executionReport.skippedReason {
+                    self.staleArtifactStatusMessage = skippedReason
+                } else {
+                    self.staleArtifactStatusMessage = "Stale/orphaned cleanup complete. Reclaimed \(ByteCountFormatter.string(fromByteCount: executionReport.totalReclaimedBytes, countStyle: .file))."
+                }
                 self.isExecuting = false
                 self.reload()
             }

@@ -10,6 +10,20 @@ struct CleanupSectionView: View {
     var body: some View {
         let selection = selectionState.selection(for: snapshot)
         let plan = DryRunPlanner.makePlan(snapshot: snapshot, selection: selection)
+        let staleArtifactReport = viewModel.staleArtifactReport ?? StaleArtifactReport(
+            generatedAt: snapshot.scannedAt,
+            candidates: [],
+            totalReclaimableBytes: 0,
+            notes: []
+        )
+        let selectedStaleArtifactIDs = selectionState.selectedStaleArtifactIDs(from: staleArtifactReport)
+        let staleArtifactPlan = StaleArtifactPlanner.makePlan(
+            snapshot: snapshot,
+            report: staleArtifactReport,
+            selectedCandidateIDs: selectedStaleArtifactIDs,
+            now: Date(),
+            defaultToAllCandidatesWhenSelectionEmpty: false
+        )
         let simulatorRuntimeByIdentifier = Dictionary(
             uniqueKeysWithValues: snapshot.simulator.runtimes.map { ($0.identifier, $0) }
         )
@@ -45,6 +59,15 @@ struct CleanupSectionView: View {
                     simulatorRuntimeByIdentifier: simulatorRuntimeByIdentifier,
                     runtimeStaleReasonsByIdentifier: runtimeStaleReasonsByIdentifier,
                     deviceStaleReasonsByUDID: deviceStaleReasonsByUDID
+                )
+
+                staleArtifactWorkflowCard(
+                    report: staleArtifactReport,
+                    plan: staleArtifactPlan,
+                    executeBlockedByRunningTools: executeBlockedByRunningTools,
+                    runningXcodeInstances: runningXcodeInstances,
+                    runningSimulatorAppInstances: runningSimulatorAppInstances,
+                    bootedSimulatorDeviceCount: bootedSimulatorDeviceCount
                 )
             }
         }
@@ -423,6 +446,156 @@ struct CleanupSectionView: View {
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
     }
 
+    private func staleArtifactWorkflowCard(
+        report: StaleArtifactReport,
+        plan: DryRunPlan,
+        executeBlockedByRunningTools: Bool,
+        runningXcodeInstances: Int,
+        runningSimulatorAppInstances: Int,
+        bootedSimulatorDeviceCount: Int
+    ) -> some View {
+        let groupedCandidates = Dictionary(grouping: report.candidates, by: \.kind)
+        let orderedKinds = groupedCandidates.keys.sorted { lhs, rhs in
+            let lhsOrder = AppPresentation.staleArtifactGroupOrder(for: lhs)
+            let rhsOrder = AppPresentation.staleArtifactGroupOrder(for: rhs)
+            if lhsOrder != rhsOrder {
+                return lhsOrder < rhsOrder
+            }
+            return lhs.rawValue < rhs.rawValue
+        }
+
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Stale And Orphaned Artifacts")
+                        .font(.headline)
+                    Text("Explicit leftover simulator and Device Support artifacts. Nothing is preselected; review and opt in before cleanup.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("Selected reclaim")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(AppPresentation.formatBytes(plan.totalReclaimableBytes))
+                        .font(.title3.weight(.semibold))
+                    Text("Detected: \(report.candidates.count) | Selected: \(plan.items.count)")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if !report.notes.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Detection notes")
+                        .font(.callout.weight(.medium))
+                    ForEach(Array(report.notes.enumerated()), id: \.offset) { _, note in
+                        Text(note)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            if report.candidates.isEmpty {
+                Text("No stale or orphaned artifacts detected in the current scan.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(orderedKinds, id: \.rawValue) { kind in
+                    if let candidates = groupedCandidates[kind] {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(AppPresentation.staleArtifactGroupTitle(for: kind))
+                                .font(.callout.weight(.medium))
+                            ForEach(candidates) { candidate in
+                                Toggle(isOn: staleArtifactBinding(for: candidate.id)) {
+                                    HStack {
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            HStack(spacing: 6) {
+                                                Text(candidate.title)
+                                                Text(AppPresentation.staleArtifactBadgeText(for: candidate.kind))
+                                                    .font(.caption2.weight(.bold))
+                                                    .padding(.horizontal, 5)
+                                                    .padding(.vertical, 2)
+                                                    .background(AppPresentation.staleArtifactBadgeColor(for: candidate.kind))
+                                                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                                            }
+                                            Text(candidate.reason)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                            Text(candidate.path)
+                                                .font(.caption.monospaced())
+                                                .foregroundStyle(.secondary)
+                                                .textSelection(.enabled)
+                                            Text("Safety: \(candidate.safetyClassification.rawValue)")
+                                                .font(.caption.monospaced())
+                                                .foregroundStyle(AppPresentation.color(for: candidate.safetyClassification))
+                                        }
+                                        Spacer()
+                                        Text(AppPresentation.formatBytes(candidate.reclaimableBytes))
+                                            .font(.callout.monospacedDigit())
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Dedicated Cleanup")
+                    .font(.subheadline.weight(.semibold))
+                Text("Uses the execute options above and runs through the stale-artifact cleanup path rather than the normal cleanup plan.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 10) {
+                    Button("Clean Selected Stale/Orphaned Artifacts") {
+                        viewModel.executeStaleArtifactCleanup(
+                            selectedCandidateIDs: selectionState.selectedStaleArtifactIDs(from: report),
+                            allowDirectDelete: selectionState.allowDirectDeleteFallback,
+                            requireToolsStopped: selectionState.blockCleanupWhileToolsRunning
+                        )
+                    }
+                    .disabled(
+                        plan.items.isEmpty ||
+                        viewModel.isExecuting ||
+                        viewModel.isLoading ||
+                        executeBlockedByRunningTools
+                    )
+
+                    if viewModel.isExecuting {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Executing stale/orphaned cleanup...")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else if executeBlockedByRunningTools {
+                        Text("Stale/orphaned cleanup is blocked while tools are running (Xcode: \(runningXcodeInstances), Simulator app: \(runningSimulatorAppInstances), booted devices: \(bootedSimulatorDeviceCount)). Close tools or disable the block option above.")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    } else {
+                        Text(viewModel.staleArtifactStatusMessage)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            if let report = viewModel.lastStaleArtifactExecutionReport {
+                ExecutionReportView(title: "Last Stale/Orphaned Cleanup", report: report)
+            }
+        }
+        .padding(10)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+    }
+
     private func categoryBinding(for kind: StorageCategoryKind) -> Binding<Bool> {
         Binding(
             get: { selectionState.selectedCategoryKinds.contains(kind) },
@@ -483,6 +656,19 @@ struct CleanupSectionView: View {
                     selectionState.selectedPhysicalDeviceSupportDirectoryPaths.insert(path)
                 } else {
                     selectionState.selectedPhysicalDeviceSupportDirectoryPaths.remove(path)
+                }
+            }
+        )
+    }
+
+    private func staleArtifactBinding(for id: String) -> Binding<Bool> {
+        Binding(
+            get: { selectionState.selectedStaleArtifactIDs.contains(id) },
+            set: { isSelected in
+                if isSelected {
+                    selectionState.selectedStaleArtifactIDs.insert(id)
+                } else {
+                    selectionState.selectedStaleArtifactIDs.remove(id)
                 }
             }
         )

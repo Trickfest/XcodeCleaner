@@ -2,11 +2,12 @@ import SwiftUI
 import XcodeInventoryCore
 
 struct ExecutionReportView: View {
+    var title = "Last Cleanup Execution"
     let report: CleanupExecutionReport
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Last Cleanup Execution")
+            Text(title)
                 .font(.headline)
             Text(
                 "Reclaimed: \(AppPresentation.formatBytes(report.totalReclaimedBytes)) | Succeeded: \(report.succeededCount) | Partial: \(report.partiallySucceededCount) | Blocked: \(report.blockedCount) | Failed: \(report.failedCount)"

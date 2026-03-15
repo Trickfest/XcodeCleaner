@@ -6,6 +6,7 @@ struct CleanupSelectionState {
     var selectedSimulatorRuntimeIdentifiers: Set<String> = []
     var selectedXcodeInstallPaths: Set<String> = []
     var selectedPhysicalDeviceSupportDirectoryPaths: Set<String> = []
+    var selectedStaleArtifactIDs: Set<String> = []
     var allowDirectDeleteFallback = false
     var blockCleanupWhileToolsRunning = true
 
@@ -24,5 +25,10 @@ struct CleanupSelectionState {
             ),
             selectedXcodeInstallPaths: Array(selectedXcodeInstallPaths.intersection(availableInstallPaths))
         )
+    }
+
+    func selectedStaleArtifactIDs(from report: StaleArtifactReport) -> [String] {
+        let availableIDs = Set(report.candidates.map(\.id))
+        return Array(selectedStaleArtifactIDs.intersection(availableIDs)).sorted()
     }
 }

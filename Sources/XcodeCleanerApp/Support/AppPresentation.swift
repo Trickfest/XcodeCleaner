@@ -112,6 +112,64 @@ enum AppPresentation {
         .joined(separator: ", ")
     }
 
+    static func orphanedSimulatorArtifactCount(in report: StaleArtifactReport?) -> Int {
+        guard let report else {
+            return 0
+        }
+        return report.candidates.filter { candidate in
+            switch candidate.kind {
+            case .orphanedSimulatorRuntime, .orphanedSimulatorDevice:
+                return true
+            case .simulatorRuntime, .deviceSupportDirectory:
+                return false
+            }
+        }.count
+    }
+
+    static func staleArtifactGroupTitle(for kind: StaleArtifactKind) -> String {
+        switch kind {
+        case .simulatorRuntime:
+            return "Stale Simulator Runtimes"
+        case .orphanedSimulatorRuntime:
+            return "Orphaned Simulator Runtimes"
+        case .orphanedSimulatorDevice:
+            return "Orphaned Simulator Device Data"
+        case .deviceSupportDirectory:
+            return "Stale Device Support Directories"
+        }
+    }
+
+    static func staleArtifactBadgeText(for kind: StaleArtifactKind) -> String {
+        switch kind {
+        case .simulatorRuntime, .deviceSupportDirectory:
+            return "STALE"
+        case .orphanedSimulatorRuntime, .orphanedSimulatorDevice:
+            return "ORPHANED"
+        }
+    }
+
+    static func staleArtifactBadgeColor(for kind: StaleArtifactKind) -> Color {
+        switch kind {
+        case .simulatorRuntime, .deviceSupportDirectory:
+            return Color.orange.opacity(0.2)
+        case .orphanedSimulatorRuntime, .orphanedSimulatorDevice:
+            return Color.red.opacity(0.18)
+        }
+    }
+
+    static func staleArtifactGroupOrder(for kind: StaleArtifactKind) -> Int {
+        switch kind {
+        case .simulatorRuntime:
+            return 0
+        case .orphanedSimulatorRuntime:
+            return 1
+        case .orphanedSimulatorDevice:
+            return 2
+        case .deviceSupportDirectory:
+            return 3
+        }
+    }
+
     static func physicalDeviceSupportDirectoryMetadata(
         _ directory: PhysicalDeviceSupportDirectoryRecord,
         scannedAt: Date

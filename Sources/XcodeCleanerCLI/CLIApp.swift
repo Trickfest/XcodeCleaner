@@ -587,7 +587,7 @@ func printUsage(toStandardError: Bool = false) {
       --no-progress                  Suppress progress output
       --dry-run                      Output dry-run plan JSON instead of snapshot JSON
       --execute                      Execute selected plan and output execution report JSON
-      --list-stale-artifacts         Output stale runtime/device-support candidate JSON
+      --list-stale-artifacts         Output stale/orphaned simulator and Device Support candidate JSON
       --clean-stale-artifacts        Execute cleanup for stale artifacts (all by default)
       --stale-artifact <id>          Include specific stale artifact candidate ID for cleanup
       --switch-active-xcode <path>   Switch active Xcode to the selected install path

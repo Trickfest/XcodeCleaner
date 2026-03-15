@@ -28,6 +28,9 @@ struct OverviewSectionView: View {
     private var runtimeTelemetryView: some View {
         let runtimeStaleReasonsByIdentifier = AppPresentation.simulatorRuntimeStaleReasonsByIdentifier(in: snapshot)
         let deviceStaleReasonsByUDID = AppPresentation.simulatorDeviceStaleReasonsByUDID(in: snapshot)
+        let orphanedSimulatorArtifactCount = AppPresentation.orphanedSimulatorArtifactCount(
+            in: viewModel.staleArtifactReport
+        )
         let staleRuntimeCount = snapshot.simulator.runtimes.filter { runtime in
             !(runtimeStaleReasonsByIdentifier[runtime.identifier] ?? []).isEmpty
         }.count
@@ -43,6 +46,7 @@ struct OverviewSectionView: View {
                 Text("Running Simulator app instances: \(snapshot.runtimeTelemetry.totalSimulatorAppRunningInstances)")
                 Text("Stale runtimes: \(staleRuntimeCount)")
                 Text("Stale devices: \(staleDeviceCount)")
+                Text("Orphaned simulator artifacts: \(orphanedSimulatorArtifactCount)")
             }
             .font(.callout.monospacedDigit())
             .foregroundStyle(.secondary)
@@ -214,6 +218,9 @@ struct OverviewSectionView: View {
     private var simulatorInventoryView: some View {
         let runtimeStaleReasonsByIdentifier = AppPresentation.simulatorRuntimeStaleReasonsByIdentifier(in: snapshot)
         let deviceStaleReasonsByUDID = AppPresentation.simulatorDeviceStaleReasonsByUDID(in: snapshot)
+        let orphanedSimulatorArtifactCount = AppPresentation.orphanedSimulatorArtifactCount(
+            in: viewModel.staleArtifactReport
+        )
         let staleRuntimeCount = snapshot.simulator.runtimes.filter { runtime in
             !(runtimeStaleReasonsByIdentifier[runtime.identifier] ?? []).isEmpty
         }.count
@@ -225,9 +232,14 @@ struct OverviewSectionView: View {
             Text("Simulator Inventory")
                 .font(.headline)
 
-            Text("Devices: \(snapshot.simulator.devices.count), Runtimes: \(snapshot.simulator.runtimes.count), Stale devices: \(staleDeviceCount), Stale runtimes: \(staleRuntimeCount)")
+            Text("Devices: \(snapshot.simulator.devices.count), Runtimes: \(snapshot.simulator.runtimes.count), Stale devices: \(staleDeviceCount), Stale runtimes: \(staleRuntimeCount), Orphaned simulator artifacts: \(orphanedSimulatorArtifactCount)")
                 .font(.callout.monospacedDigit())
                 .foregroundStyle(.secondary)
+            if orphanedSimulatorArtifactCount > 0 {
+                Text("Review orphaned simulator artifacts in Cleanup > Stale And Orphaned Artifacts.")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
 
             Text("Simulator Runtimes")
                 .font(.subheadline.weight(.semibold))

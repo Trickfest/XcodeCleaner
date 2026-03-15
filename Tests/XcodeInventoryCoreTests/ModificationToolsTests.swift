@@ -3,12 +3,41 @@ import Testing
 @testable import XcodeInventoryCore
 
 struct ModificationToolsTests {
-    @Test("Stale artifact detector finds stale simulator runtimes and older Device Support directories")
+    @Test("Stale artifact detector finds stale runtimes, orphaned simulator artifacts, and older Device Support directories")
     func detectStaleArtifacts() {
         let snapshot = makeModificationSnapshot()
         let detector = StaleArtifactDetector(
             directoryLister: StubDirectoryLister(
                 childrenByDirectory: [
+                    "/tmp/home/Library/Developer/CoreSimulator/Devices": [
+                        URL(filePath: "/tmp/home/Library/Developer/CoreSimulator/Devices/SIM-1", directoryHint: .isDirectory),
+                        URL(filePath: "/tmp/home/Library/Developer/CoreSimulator/Devices/ORPHAN-SIM-2", directoryHint: .isDirectory),
+                    ],
+                    "/Library/Developer/CoreSimulator/Profiles/Runtimes": [
+                        URL(filePath: "/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 18.0.simruntime", directoryHint: .isDirectory),
+                        URL(filePath: "/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 17.0.simruntime", directoryHint: .isDirectory),
+                    ],
+                    "/Library/Developer/CoreSimulator/Volumes": [
+                        URL(filePath: "/Library/Developer/CoreSimulator/Volumes/iOS_ORPHANED", directoryHint: .isDirectory),
+                    ],
+                    "/Library/Developer/CoreSimulator/Volumes/iOS_ORPHANED": [
+                        URL(filePath: "/Library/Developer/CoreSimulator/Volumes/iOS_ORPHANED/Library", directoryHint: .isDirectory),
+                    ],
+                    "/Library/Developer/CoreSimulator/Volumes/iOS_ORPHANED/Library": [
+                        URL(filePath: "/Library/Developer/CoreSimulator/Volumes/iOS_ORPHANED/Library/Developer", directoryHint: .isDirectory),
+                    ],
+                    "/Library/Developer/CoreSimulator/Volumes/iOS_ORPHANED/Library/Developer": [
+                        URL(filePath: "/Library/Developer/CoreSimulator/Volumes/iOS_ORPHANED/Library/Developer/CoreSimulator", directoryHint: .isDirectory),
+                    ],
+                    "/Library/Developer/CoreSimulator/Volumes/iOS_ORPHANED/Library/Developer/CoreSimulator": [
+                        URL(filePath: "/Library/Developer/CoreSimulator/Volumes/iOS_ORPHANED/Library/Developer/CoreSimulator/Profiles", directoryHint: .isDirectory),
+                    ],
+                    "/Library/Developer/CoreSimulator/Volumes/iOS_ORPHANED/Library/Developer/CoreSimulator/Profiles": [
+                        URL(filePath: "/Library/Developer/CoreSimulator/Volumes/iOS_ORPHANED/Library/Developer/CoreSimulator/Profiles/Runtimes", directoryHint: .isDirectory),
+                    ],
+                    "/Library/Developer/CoreSimulator/Volumes/iOS_ORPHANED/Library/Developer/CoreSimulator/Profiles/Runtimes": [
+                        URL(filePath: "/Library/Developer/CoreSimulator/Volumes/iOS_ORPHANED/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 16.4.simruntime", directoryHint: .isDirectory),
+                    ],
                     "/tmp/DeviceSupport": [
                         URL(filePath: "/tmp/DeviceSupport/18.0 (22A123)", directoryHint: .isDirectory),
                         URL(filePath: "/tmp/DeviceSupport/17.5 (21F90)", directoryHint: .isDirectory),
@@ -19,8 +48,13 @@ struct ModificationToolsTests {
             ),
             pathSizer: StubModificationPathSizer(
                 sizeByPath: [
+                    "/tmp/home/Library/Developer/CoreSimulator/Devices/ORPHAN-SIM-2": 80,
+                    "/Library/Developer/CoreSimulator/Volumes/iOS_ORPHANED/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 16.4.simruntime": 700,
                     "/tmp/DeviceSupport/16.4 (20E247)": 300,
                 ]
+            ),
+            homeDirectoryProvider: StubModificationHomeDirectoryProvider(
+                url: URL(filePath: "/tmp/home", directoryHint: .isDirectory)
             ),
             now: { Date(timeIntervalSince1970: 1_000) }
         )
@@ -28,10 +62,13 @@ struct ModificationToolsTests {
         let report = detector.detect(snapshot: snapshot)
 
         #expect(report.generatedAt == Date(timeIntervalSince1970: 1_000))
-        #expect(report.candidates.count == 2)
-        #expect(report.totalReclaimableBytes == 300 + 500)
-        #expect(report.candidates.contains(where: { $0.kind == .simulatorRuntime && $0.path == "/tmp/Runtime-17.simruntime" }))
+        #expect(report.candidates.count == 4)
+        #expect(report.totalReclaimableBytes == 300 + 500 + 700 + 80)
+        #expect(report.candidates.contains(where: { $0.kind == .simulatorRuntime && $0.path == "/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 17.0.simruntime" }))
+        #expect(report.candidates.contains(where: { $0.kind == .orphanedSimulatorRuntime && $0.path == "/Library/Developer/CoreSimulator/Volumes/iOS_ORPHANED/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 16.4.simruntime" }))
+        #expect(report.candidates.contains(where: { $0.kind == .orphanedSimulatorDevice && $0.path == "/tmp/home/Library/Developer/CoreSimulator/Devices/ORPHAN-SIM-2" }))
         #expect(report.candidates.contains(where: { $0.kind == .deviceSupportDirectory && $0.path == "/tmp/DeviceSupport/16.4 (20E247)" }))
+        #expect(report.notes.contains(where: { $0.contains("orphaned simulator artifact") }))
     }
 
     @Test("Stale artifact planner selects requested IDs and builds deterministic plan")
@@ -75,6 +112,74 @@ struct ModificationToolsTests {
         #expect(plan.items[0].kind == .staleDeviceSupport)
         #expect(plan.items[0].staleArtifactID == "deviceSupportDirectory:/tmp/DeviceSupport/16.4 (20E247)")
         #expect(plan.totalReclaimableBytes == 300)
+    }
+
+    @Test("Stale artifact planner maps orphaned simulator device candidates to stale simulator device cleanup")
+    func staleArtifactPlannerOrphanedSimulatorDeviceSelection() {
+        let snapshot = makeModificationSnapshot()
+        let report = StaleArtifactReport(
+            generatedAt: Date(timeIntervalSince1970: 10),
+            candidates: [
+                StaleArtifactCandidate(
+                    id: "orphanedSimulatorDevice:/tmp/home/Library/Developer/CoreSimulator/Devices/ORPHAN-SIM-2",
+                    kind: .orphanedSimulatorDevice,
+                    title: "Orphaned Simulator Device Data: ORPHAN-SIM-2",
+                    path: "/tmp/home/Library/Developer/CoreSimulator/Devices/ORPHAN-SIM-2",
+                    reclaimableBytes: 80,
+                    reason: "Directory exists on disk but is not present in the current simulator inventory.",
+                    safetyClassification: .conditionallySafe
+                ),
+            ],
+            totalReclaimableBytes: 80,
+            notes: []
+        )
+
+        let plan = StaleArtifactPlanner.makePlan(
+            snapshot: snapshot,
+            report: report,
+            selectedCandidateIDs: ["orphanedSimulatorDevice:/tmp/home/Library/Developer/CoreSimulator/Devices/ORPHAN-SIM-2"],
+            now: Date(timeIntervalSince1970: 20)
+        )
+
+        #expect(plan.generatedAt == Date(timeIntervalSince1970: 20))
+        #expect(plan.items.count == 1)
+        #expect(plan.items[0].kind == .staleSimulatorDevice)
+        #expect(plan.items[0].staleArtifactKind == .orphanedSimulatorDevice)
+        #expect(plan.totalReclaimableBytes == 80)
+    }
+
+    @Test("Stale artifact planner can require explicit candidate selection")
+    func staleArtifactPlannerExplicitSelectionMode() {
+        let snapshot = makeModificationSnapshot()
+        let report = StaleArtifactReport(
+            generatedAt: Date(timeIntervalSince1970: 10),
+            candidates: [
+                StaleArtifactCandidate(
+                    id: "simulatorRuntime:/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 17.0.simruntime",
+                    kind: .simulatorRuntime,
+                    title: "Stale Simulator Runtime: iOS 17.0",
+                    path: "/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 17.0.simruntime",
+                    reclaimableBytes: 500,
+                    reason: "Runtime is unavailable and can usually be removed safely.",
+                    safetyClassification: .conditionallySafe
+                ),
+            ],
+            totalReclaimableBytes: 500,
+            notes: []
+        )
+
+        let plan = StaleArtifactPlanner.makePlan(
+            snapshot: snapshot,
+            report: report,
+            selectedCandidateIDs: [],
+            now: Date(timeIntervalSince1970: 30),
+            defaultToAllCandidatesWhenSelectionEmpty: false
+        )
+
+        #expect(plan.generatedAt == Date(timeIntervalSince1970: 30))
+        #expect(plan.items.isEmpty)
+        #expect(plan.totalReclaimableBytes == 0)
+        #expect(plan.notes.contains("No stale artifact plan items selected."))
     }
 
     @Test("Active Xcode switcher succeeds and verifies xcode-select output")
@@ -143,6 +248,14 @@ private struct StubModificationPathSizer: PathSizing {
     }
 }
 
+private struct StubModificationHomeDirectoryProvider: HomeDirectoryProviding {
+    let url: URL
+
+    func homeDirectoryURL() -> URL {
+        url
+    }
+}
+
 private final class StubSwitchCommandRunner: CommandRunning {
     private var activeDeveloperDirectoryPath: String
 
@@ -177,7 +290,7 @@ private func makeModificationSnapshot() -> XcodeInventorySnapshot {
             name: "iOS 18.0",
             version: "18.0",
             isAvailable: true,
-            bundlePath: "/tmp/Runtime-18.simruntime",
+            bundlePath: "/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 18.0.simruntime",
             sizeInBytes: 600,
             ownershipSummary: "Owned by runtime files",
             safetyClassification: .conditionallySafe
@@ -187,7 +300,7 @@ private func makeModificationSnapshot() -> XcodeInventorySnapshot {
             name: "iOS 17.0",
             version: "17.0",
             isAvailable: false,
-            bundlePath: "/tmp/Runtime-17.simruntime",
+            bundlePath: "/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 17.0.simruntime",
             sizeInBytes: 500,
             ownershipSummary: "Owned by runtime files",
             safetyClassification: .conditionallySafe
@@ -202,7 +315,7 @@ private func makeModificationSnapshot() -> XcodeInventorySnapshot {
             runtimeName: "iOS 18.0",
             state: "Shutdown",
             isAvailable: true,
-            dataPath: "/tmp/Devices/SIM-1",
+            dataPath: "/tmp/home/Library/Developer/CoreSimulator/Devices/SIM-1",
             sizeInBytes: 100,
             runningInstanceCount: 0,
             ownershipSummary: "Owned by device data",

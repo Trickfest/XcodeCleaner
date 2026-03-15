@@ -171,6 +171,59 @@ struct CleanupExecutorTests {
         #expect(report.totalReclaimedBytes == 0)
     }
 
+    @Test("Cleanup executor allows explicit orphaned simulator device cleanup through stale-artifact plans")
+    func executorAllowsOrphanedStaleSimulatorDeviceCleanup() {
+        let snapshot = XcodeInventorySnapshot(
+            scannedAt: Date(timeIntervalSince1970: 100),
+            activeDeveloperDirectoryPath: nil,
+            installs: [],
+            storage: XcodeStorageUsage(categories: [], totalBytes: 0),
+            simulator: SimulatorInventory(devices: [], runtimes: []),
+            runtimeTelemetry: RuntimeTelemetry(totalXcodeRunningInstances: 0, totalSimulatorAppRunningInstances: 0)
+        )
+        let plan = DryRunPlan(
+            generatedAt: Date(timeIntervalSince1970: 950),
+            selection: DryRunSelection(
+                selectedCategoryKinds: [],
+                selectedSimulatorDeviceUDIDs: []
+            ),
+            items: [
+                DryRunPlanItem(
+                    kind: .staleSimulatorDevice,
+                    staleArtifactID: "orphanedSimulatorDevice:/tmp/CoreSimulator/Devices/ORPHAN-SIM-2",
+                    staleArtifactKind: .orphanedSimulatorDevice,
+                    title: "Orphaned Simulator Device Data: ORPHAN-SIM-2",
+                    reclaimableBytes: 90,
+                    paths: ["/tmp/CoreSimulator/Devices/ORPHAN-SIM-2"],
+                    ownershipSummary: "Directory exists on disk but is not present in the current simulator inventory.",
+                    safetyClassification: .conditionallySafe
+                ),
+            ],
+            totalReclaimableBytes: 90,
+            notes: []
+        )
+
+        let executor = CleanupExecutor(
+            fileOperator: StubCleanupFileOperator(
+                existingPaths: ["/tmp/CoreSimulator/Devices/ORPHAN-SIM-2"]
+            ),
+            pathSizer: StubExecutionPathSizer(
+                sizeByPath: ["/tmp/CoreSimulator/Devices/ORPHAN-SIM-2": 90]
+            ),
+            now: { Date(timeIntervalSince1970: 960) }
+        )
+
+        let report = executor.execute(snapshot: snapshot, plan: plan, allowDirectDelete: false)
+
+        #expect(report.results.count == 1)
+        #expect(report.succeededCount == 1)
+        #expect(report.blockedCount == 0)
+        #expect(report.totalReclaimedBytes == 90)
+        #expect(report.results.first?.item.kind == .staleSimulatorDevice)
+        #expect(report.results.first?.status == .succeeded)
+        #expect(report.results.first?.pathResults.first?.path == "/tmp/CoreSimulator/Devices/ORPHAN-SIM-2")
+    }
+
 }
 
 private struct StubCleanupFileOperator: CleanupFileOperating {

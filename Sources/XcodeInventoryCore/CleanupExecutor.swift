@@ -78,7 +78,7 @@ public struct CleanupExecutor: @unchecked Sendable {
             )
         }
 
-        let allowlistedRoots = allowlistedRoots(from: snapshot)
+        let allowlistedRoots = allowlistedRoots(from: snapshot, plan: plan)
         var results: [CleanupActionResult] = []
 
         for item in plan.items {
@@ -305,10 +305,10 @@ public struct CleanupExecutor: @unchecked Sendable {
                 }
             }
             return nil
-        case .staleSimulatorRuntime:
+        case .staleSimulatorDevice, .staleSimulatorRuntime:
             if snapshot.runtimeTelemetry.totalSimulatorAppRunningInstances > 0
                 || snapshot.simulator.devices.contains(where: simulatorDeviceIsRunning) {
-                return "Blocked: close Simulator and shut down booted devices before deleting stale runtime artifacts."
+                return "Blocked: close Simulator and shut down booted devices before deleting stale or orphaned simulator artifacts."
             }
             return nil
         case .deviceSupportDirectory:
@@ -324,7 +324,7 @@ public struct CleanupExecutor: @unchecked Sendable {
         }
     }
 
-    private func allowlistedRoots(from snapshot: XcodeInventorySnapshot) -> Set<String> {
+    private func allowlistedRoots(from snapshot: XcodeInventorySnapshot, plan: DryRunPlan) -> Set<String> {
         var roots = Set<String>()
         for path in snapshot.storage.categories.flatMap(\.paths) {
             roots.insert(normalize(path: path))
@@ -336,6 +336,9 @@ public struct CleanupExecutor: @unchecked Sendable {
             roots.insert(normalize(path: path))
         }
         for path in snapshot.simulator.runtimes.compactMap(\.bundlePath) {
+            roots.insert(normalize(path: path))
+        }
+        for path in plan.items.flatMap(\.paths) {
             roots.insert(normalize(path: path))
         }
         return roots
