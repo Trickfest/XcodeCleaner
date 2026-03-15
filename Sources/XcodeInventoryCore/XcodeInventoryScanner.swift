@@ -204,14 +204,14 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
                 return lhs.path.localizedCaseInsensitiveCompare(rhs.path) == .orderedAscending
             }
 
-        emitProgress(.sizingStorageCategories, 0.40, "Sizing storage categories")
-        let storage = buildStorageUsage(installs: installs)
-        let physicalDeviceSupportDirectories = buildPhysicalDeviceSupportDirectories(from: storage)
-        emitProgress(.sizingStorageCategories, 0.58, "Storage category sizing complete")
-
-        emitProgress(.loadingSimulatorListing, 0.62, "Loading simulator device/runtime listing")
+        emitProgress(.loadingSimulatorListing, 0.40, "Loading simulator device/runtime listing")
         let simulatorListing = simulatorListingProvider.simulatorListing()
-        emitProgress(.loadingSimulatorListing, 0.68, "Loaded simulator device/runtime listing")
+        emitProgress(.loadingSimulatorListing, 0.48, "Loaded simulator device/runtime listing")
+
+        emitProgress(.sizingStorageCategories, 0.54, "Sizing storage categories")
+        let storage = buildStorageUsage(installs: installs, simulatorListing: simulatorListing)
+        let physicalDeviceSupportDirectories = buildPhysicalDeviceSupportDirectories(from: storage)
+        emitProgress(.sizingStorageCategories, 0.68, "Storage category sizing complete")
 
         emitProgress(.buildingSimulatorInventory, 0.74, "Building simulator inventory records")
         let simulatorInventory = buildSimulatorInventory(from: simulatorListing)
@@ -246,13 +246,15 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
         return snapshot
     }
 
-    private func buildStorageUsage(installs: [XcodeInstall]) -> XcodeStorageUsage {
+    private func buildStorageUsage(
+        installs: [XcodeInstall],
+        simulatorListing: SimulatorListing
+    ) -> XcodeStorageUsage {
         let homeDirectoryURL = homeDirectoryProvider.homeDirectoryURL()
-        let simulatorPaths = [
-            homeDirectoryURL.appendingPathComponent("Library/Developer/CoreSimulator/Devices", isDirectory: true),
-            homeDirectoryURL.appendingPathComponent("Library/Developer/CoreSimulator/Caches", isDirectory: true),
-            URL(filePath: "/Library/Developer/CoreSimulator/Profiles/Runtimes", directoryHint: .isDirectory),
-        ]
+        let simulatorPaths = simulatorStoragePaths(
+            homeDirectoryURL: homeDirectoryURL,
+            listing: simulatorListing
+        )
 
         let categories = [
             makeCategory(
@@ -310,6 +312,41 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
         }
 
         return XcodeStorageUsage(categories: categories, totalBytes: totalBytes)
+    }
+
+    private func simulatorStoragePaths(
+        homeDirectoryURL: URL,
+        listing: SimulatorListing
+    ) -> [URL] {
+        var paths = [
+            homeDirectoryURL.appendingPathComponent("Library/Developer/CoreSimulator/Devices", isDirectory: true),
+            homeDirectoryURL.appendingPathComponent("Library/Developer/CoreSimulator/Caches", isDirectory: true),
+        ]
+
+        let runtimeBundlePaths = Array(
+            Set(
+                listing.runtimes.compactMap { runtime in
+                    runtime.bundlePath.flatMap {
+                        normalizedPath(for: URL(filePath: $0, directoryHint: .isDirectory))
+                    }
+                }
+            )
+        )
+        .sorted()
+
+        if runtimeBundlePaths.isEmpty {
+            paths.append(
+                URL(filePath: "/Library/Developer/CoreSimulator/Profiles/Runtimes", directoryHint: .isDirectory)
+            )
+        } else {
+            paths.append(
+                contentsOf: runtimeBundlePaths.map {
+                    URL(filePath: $0, directoryHint: .isDirectory)
+                }
+            )
+        }
+
+        return paths
     }
 
     private func buildPhysicalDeviceSupportDirectories(

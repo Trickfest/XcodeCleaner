@@ -46,13 +46,8 @@ struct XcodeInventoryScannerTests {
         let simulatorCachesPath = fakeHome
             .appendingPathComponent("Library/Developer/CoreSimulator/Caches", isDirectory: true)
             .path
-        let simulatorRuntimesPath = "/Library/Developer/CoreSimulator/Profiles/Runtimes"
-        let runtime18BundlePath = fakeHome
-            .appendingPathComponent("Library/Developer/CoreSimulator/Profiles/Runtimes/iOS-18.simruntime", isDirectory: true)
-            .path
-        let runtime17BundlePath = fakeHome
-            .appendingPathComponent("Library/Developer/CoreSimulator/Profiles/Runtimes/iOS-17.simruntime", isDirectory: true)
-            .path
+        let runtime18BundlePath = "/Library/Developer/CoreSimulator/Volumes/iOS_23A8464/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 18.0.simruntime"
+        let runtime17BundlePath = "/Library/Developer/CoreSimulator/Volumes/iOS_23C54/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 17.0.simruntime"
         let simulatorDevice1UDID = "1111-AAAA-2222-BBBB"
         let simulatorDevice2UDID = "3333-CCCC-4444-DDDD"
         let simulatorDevice1Path = fakeHome
@@ -74,7 +69,6 @@ struct XcodeInventoryScannerTests {
                 deviceSupportPath: 500,
                 simulatorDevicesPath: 600,
                 simulatorCachesPath: 700,
-                simulatorRuntimesPath: 800,
                 runtime18BundlePath: 450,
                 runtime17BundlePath: 350,
                 simulatorDevice1Path: 120,
@@ -178,6 +172,11 @@ struct XcodeInventoryScannerTests {
         #expect(snapshot.storage.categories[1].kind == .simulatorData)
         #expect(snapshot.storage.categories[1].bytes == 2_100)
         #expect(snapshot.storage.categories[1].safetyClassification == .conditionallySafe)
+        #expect(snapshot.storage.categories[1].paths.contains(simulatorDevicesPath))
+        #expect(snapshot.storage.categories[1].paths.contains(simulatorCachesPath))
+        #expect(snapshot.storage.categories[1].paths.contains(runtime18BundlePath))
+        #expect(snapshot.storage.categories[1].paths.contains(runtime17BundlePath))
+        #expect(snapshot.storage.categories[1].paths.contains("/Library/Developer/CoreSimulator/Profiles/Runtimes") == false)
         #expect(bytes(for: .deviceSupport, in: snapshot) == 500)
         #expect(bytes(for: .mobileDeviceCrashLogs, in: snapshot) == 450)
         #expect(bytes(for: .archives, in: snapshot) == 400)
@@ -322,8 +321,8 @@ struct XcodeInventoryScannerTests {
         #expect(phaseOrder == [
             .discoveringXcodeInstalls,
             .sizingXcodeInstalls,
-            .sizingStorageCategories,
             .loadingSimulatorListing,
+            .sizingStorageCategories,
             .buildingSimulatorInventory,
             .computingRuntimeTelemetry,
             .finalizingSnapshot,
