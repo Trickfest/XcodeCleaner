@@ -46,6 +46,8 @@ struct XcodeInventoryScannerTests {
         let simulatorCachesPath = fakeHome
             .appendingPathComponent("Library/Developer/CoreSimulator/Caches", isDirectory: true)
             .path
+        let systemSimulatorCachesPath = "/Library/Developer/CoreSimulator/Caches"
+        let legacyRuntimeRootPath = "/Library/Developer/CoreSimulator/Profiles/Runtimes"
         let runtime18BundlePath = "/Library/Developer/CoreSimulator/Volumes/iOS_23A8464/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 18.0.simruntime"
         let runtime17BundlePath = "/Library/Developer/CoreSimulator/Volumes/iOS_23C54/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 17.0.simruntime"
         let simulatorDevice1UDID = "1111-AAAA-2222-BBBB"
@@ -69,6 +71,8 @@ struct XcodeInventoryScannerTests {
                 deviceSupportPath: 500,
                 simulatorDevicesPath: 600,
                 simulatorCachesPath: 700,
+                systemSimulatorCachesPath: 80,
+                legacyRuntimeRootPath: 900,
                 runtime18BundlePath: 450,
                 runtime17BundlePath: 350,
                 simulatorDevice1Path: 120,
@@ -164,18 +168,23 @@ struct XcodeInventoryScannerTests {
         #expect(snapshot.installs.first?.sizeInBytes == 2_000)
         #expect(snapshot.installs.first?.ownershipSummary == "Owned by this Xcode installation bundle")
         #expect(snapshot.installs.first?.safetyClassification == .destructive)
-        #expect(snapshot.storage.totalBytes == 6_750)
+        #expect(snapshot.storage.totalBytes == 6_440)
         #expect(snapshot.storage.categories.count == 6)
         #expect(snapshot.storage.categories[0].kind == .xcodeApplications)
         #expect(snapshot.storage.categories[0].bytes == 3_000)
         #expect(snapshot.storage.categories[0].safetyClassification == .destructive)
         #expect(snapshot.storage.categories[1].kind == .simulatorData)
-        #expect(snapshot.storage.categories[1].bytes == 2_100)
+        #expect(snapshot.storage.categories[1].bytes == 1_790)
         #expect(snapshot.storage.categories[1].safetyClassification == .conditionallySafe)
-        #expect(snapshot.storage.categories[1].paths.contains(simulatorDevicesPath))
-        #expect(snapshot.storage.categories[1].paths.contains(simulatorCachesPath))
-        #expect(snapshot.storage.categories[1].paths.contains(runtime18BundlePath))
-        #expect(snapshot.storage.categories[1].paths.contains(runtime17BundlePath))
+        #expect(Set(snapshot.storage.categories[1].paths) == Set([
+            simulatorCachesPath,
+            systemSimulatorCachesPath,
+            runtime18BundlePath,
+            runtime17BundlePath,
+            simulatorDevice1Path,
+            simulatorDevice2Path,
+        ]))
+        #expect(snapshot.storage.categories[1].paths.contains(simulatorDevicesPath) == false)
         #expect(snapshot.storage.categories[1].paths.contains("/Library/Developer/CoreSimulator/Profiles/Runtimes") == false)
         #expect(bytes(for: .deviceSupport, in: snapshot) == 500)
         #expect(bytes(for: .mobileDeviceCrashLogs, in: snapshot) == 450)
@@ -192,6 +201,92 @@ struct XcodeInventoryScannerTests {
         #expect(snapshot.simulator.devices[0].runningInstanceCount == 1)
         #expect(snapshot.simulator.devices[0].safetyClassification == .conditionallySafe)
         #expect(snapshot.simulator.devices[1].runningInstanceCount == 0)
+    }
+
+    @Test("Scanner sizes Simulator Data from explicit device and runtime paths plus cache roots")
+    func scannerSizesSimulatorAggregateFromExplicitPaths() throws {
+        let sandbox = try TemporaryDirectory.make()
+        defer { sandbox.cleanup() }
+
+        let fakeHome = sandbox.url.appendingPathComponent("fake-home", isDirectory: true)
+        let simulatorDevicesRootPath = fakeHome
+            .appendingPathComponent("Library/Developer/CoreSimulator/Devices", isDirectory: true)
+            .path
+        let simulatorCachesPath = fakeHome
+            .appendingPathComponent("Library/Developer/CoreSimulator/Caches", isDirectory: true)
+            .path
+        let systemSimulatorCachesPath = "/Library/Developer/CoreSimulator/Caches"
+        let legacyRuntimeRootPath = "/Library/Developer/CoreSimulator/Profiles/Runtimes"
+        let simulatorDevice1Path = fakeHome
+            .appendingPathComponent("Library/Developer/CoreSimulator/Devices/SIM-001", isDirectory: true)
+            .path
+        let simulatorDevice2Path = fakeHome
+            .appendingPathComponent("Library/Developer/CoreSimulator/Devices/SIM-002", isDirectory: true)
+            .path
+        let runtimeBundlePath = "/Library/Developer/CoreSimulator/Volumes/iOS_23A8464/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 18.0.simruntime"
+
+        let scanner = XcodeInventoryScanner(
+            applicationDiscoverer: StubDiscoverer(urls: []),
+            activeDeveloperDirectoryProvider: StubActiveDeveloperProvider(url: nil),
+            pathSizer: StubPathSizer(sizeByPath: [
+                simulatorDevicesRootPath: 9_000,
+                simulatorCachesPath: 50,
+                systemSimulatorCachesPath: 60,
+                legacyRuntimeRootPath: 8_000,
+                simulatorDevice1Path: 100,
+                simulatorDevice2Path: 200,
+                runtimeBundlePath: 400,
+            ]),
+            homeDirectoryProvider: StubHomeDirectoryProvider(url: fakeHome),
+            runningApplicationsProvider: StubRunningApplicationsProvider(records: []),
+            simulatorListingProvider: StubSimulatorListingProvider(
+                listing: SimulatorListing(
+                    devices: [
+                        SimulatorDeviceListingRecord(
+                            udid: "SIM-001",
+                            name: "iPhone 15",
+                            runtimeIdentifier: "runtime-1",
+                            state: "Shutdown",
+                            isAvailable: true
+                        ),
+                        SimulatorDeviceListingRecord(
+                            udid: "SIM-002",
+                            name: "iPhone 15 Pro",
+                            runtimeIdentifier: "runtime-1",
+                            state: "Shutdown",
+                            isAvailable: true
+                        ),
+                    ],
+                    runtimes: [
+                        SimulatorRuntimeListingRecord(
+                            identifier: "runtime-1",
+                            name: "iOS 18.0",
+                            version: "18.0",
+                            isAvailable: true,
+                            bundlePath: runtimeBundlePath
+                        ),
+                    ]
+                )
+            ),
+            now: { Date(timeIntervalSince1970: 300) }
+        )
+
+        let snapshot = scanner.scan()
+        let simulatorCategory = snapshot.storage.categories.first(where: { $0.kind == .simulatorData })!
+
+        #expect(simulatorCategory.bytes == 810)
+        #expect(Set(simulatorCategory.paths) == Set([
+            simulatorCachesPath,
+            systemSimulatorCachesPath,
+            simulatorDevice1Path,
+            simulatorDevice2Path,
+            runtimeBundlePath,
+        ]))
+        #expect(simulatorCategory.paths.contains(simulatorDevicesRootPath) == false)
+        #expect(simulatorCategory.paths.contains(legacyRuntimeRootPath) == false)
+        #expect(snapshot.simulator.devices.map(\.sizeInBytes) == [100, 200])
+        #expect(snapshot.simulator.runtimes.map(\.sizeInBytes) == [400])
+        #expect(snapshot.storage.totalBytes == 810)
     }
 
     @Test("Scanner falls back to CFBundleVersion when DTXcodeBuild is missing")
@@ -322,8 +417,8 @@ struct XcodeInventoryScannerTests {
             .discoveringXcodeInstalls,
             .sizingXcodeInstalls,
             .loadingSimulatorListing,
-            .sizingStorageCategories,
             .buildingSimulatorInventory,
+            .sizingStorageCategories,
             .computingRuntimeTelemetry,
             .finalizingSnapshot,
         ])
@@ -585,8 +680,12 @@ private func makePlanningSnapshot() -> XcodeInventorySnapshot {
         StorageCategoryUsage(
             kind: .simulatorData,
             title: "Simulator Data",
-            bytes: 8_192,
-            paths: ["/tmp/CoreSimulator/Devices", "/tmp/CoreSimulator/Caches"],
+            bytes: 20_480,
+            paths: [
+                "/tmp/CoreSimulator/Caches",
+                "/tmp/CoreSimulator/Devices/SIM-1",
+                "/tmp/CoreSimulator/Profiles/Runtimes/iOS-18.simruntime",
+            ],
             ownershipSummary: "Owned by CoreSimulator runtimes and device sandboxes",
             safetyClassification: .conditionallySafe
         ),
@@ -626,7 +725,7 @@ private func makePlanningSnapshot() -> XcodeInventorySnapshot {
         scannedAt: Date(timeIntervalSince1970: 10),
         activeDeveloperDirectoryPath: nil,
         installs: [],
-        storage: XcodeStorageUsage(categories: categories, totalBytes: 11_264),
+        storage: XcodeStorageUsage(categories: categories, totalBytes: 23_552),
         simulator: simulator,
         runtimeTelemetry: RuntimeTelemetry(totalXcodeRunningInstances: 0, totalSimulatorAppRunningInstances: 0)
     )

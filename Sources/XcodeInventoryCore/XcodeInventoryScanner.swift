@@ -208,18 +208,18 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
         let simulatorListing = simulatorListingProvider.simulatorListing()
         emitProgress(.loadingSimulatorListing, 0.48, "Loaded simulator device/runtime listing")
 
-        emitProgress(.sizingStorageCategories, 0.54, "Sizing storage categories")
-        let storage = buildStorageUsage(installs: installs, simulatorListing: simulatorListing)
-        let physicalDeviceSupportDirectories = buildPhysicalDeviceSupportDirectories(from: storage)
-        emitProgress(.sizingStorageCategories, 0.68, "Storage category sizing complete")
-
-        emitProgress(.buildingSimulatorInventory, 0.74, "Building simulator inventory records")
+        emitProgress(.buildingSimulatorInventory, 0.54, "Building simulator inventory records")
         let simulatorInventory = buildSimulatorInventory(from: simulatorListing)
         emitProgress(
             .buildingSimulatorInventory,
-            0.86,
+            0.68,
             "Built \(simulatorInventory.devices.count) device and \(simulatorInventory.runtimes.count) runtime records"
         )
+
+        emitProgress(.sizingStorageCategories, 0.74, "Sizing storage categories")
+        let storage = buildStorageUsage(installs: installs, simulatorInventory: simulatorInventory)
+        let physicalDeviceSupportDirectories = buildPhysicalDeviceSupportDirectories(from: storage)
+        emitProgress(.sizingStorageCategories, 0.86, "Storage category sizing complete")
 
         emitProgress(.computingRuntimeTelemetry, 0.92, "Computing runtime telemetry")
         let runtimeTelemetry = RuntimeTelemetry(
@@ -248,12 +248,12 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
 
     private func buildStorageUsage(
         installs: [XcodeInstall],
-        simulatorListing: SimulatorListing
+        simulatorInventory: SimulatorInventory
     ) -> XcodeStorageUsage {
         let homeDirectoryURL = homeDirectoryProvider.homeDirectoryURL()
         let simulatorPaths = simulatorStoragePaths(
             homeDirectoryURL: homeDirectoryURL,
-            listing: simulatorListing
+            inventory: simulatorInventory
         )
 
         let categories = [
@@ -316,37 +316,36 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
 
     private func simulatorStoragePaths(
         homeDirectoryURL: URL,
-        listing: SimulatorListing
+        inventory: SimulatorInventory
     ) -> [URL] {
-        var paths = [
-            homeDirectoryURL.appendingPathComponent("Library/Developer/CoreSimulator/Devices", isDirectory: true),
-            homeDirectoryURL.appendingPathComponent("Library/Developer/CoreSimulator/Caches", isDirectory: true),
-        ]
+        let explicitPaths =
+            [
+                homeDirectoryURL.appendingPathComponent("Library/Developer/CoreSimulator/Caches", isDirectory: true),
+                URL(filePath: "/Library/Developer/CoreSimulator/Caches", directoryHint: .isDirectory),
+            ]
+            + inventory.devices.map { URL(filePath: $0.dataPath, directoryHint: .isDirectory) }
+            + inventory.runtimes.compactMap { runtime in
+                runtime.bundlePath.map { URL(filePath: $0, directoryHint: .isDirectory) }
+            }
 
-        let runtimeBundlePaths = Array(
-            Set(
-                listing.runtimes.compactMap { runtime in
-                    runtime.bundlePath.flatMap {
-                        normalizedPath(for: URL(filePath: $0, directoryHint: .isDirectory))
-                    }
-                }
-            )
-        )
-        .sorted()
+        return deduplicatedNormalizedPaths(from: explicitPaths)
+    }
 
-        if runtimeBundlePaths.isEmpty {
-            paths.append(
-                URL(filePath: "/Library/Developer/CoreSimulator/Profiles/Runtimes", directoryHint: .isDirectory)
-            )
-        } else {
-            paths.append(
-                contentsOf: runtimeBundlePaths.map {
-                    URL(filePath: $0, directoryHint: .isDirectory)
-                }
-            )
+    private func deduplicatedNormalizedPaths(from paths: [URL]) -> [URL] {
+        var normalizedPaths: [String] = []
+        var seenPaths = Set<String>()
+
+        for pathURL in paths {
+            let normalized = normalizedPath(for: pathURL) ?? pathURL.path
+            guard seenPaths.insert(normalized).inserted else {
+                continue
+            }
+            normalizedPaths.append(normalized)
         }
 
-        return paths
+        return normalizedPaths
+            .sorted()
+            .map { URL(filePath: $0, directoryHint: .isDirectory) }
     }
 
     private func buildPhysicalDeviceSupportDirectories(

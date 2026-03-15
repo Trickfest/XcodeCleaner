@@ -13,7 +13,8 @@ Last updated: 2026-03-14
 ## Accounting And Cleanup Follow-Up
 
 - [x] Fix simulator runtime accounting so `Total Xcode Footprint` includes runtime storage from the actual runtime bundle paths reported by `simctl`, not just `/Library/Developer/CoreSimulator/Profiles/Runtimes`.
-- [ ] Rework simulator aggregate sizing to dedupe runtime paths, device data paths, caches, and any volume-backed runtime storage so totals and itemized rows do not diverge.
+- [x] Make `Simulator Data` equal the true non-overlapping total of simulator devices, simulator caches, and simulator runtimes across modern CoreSimulator layouts, so the aggregate total and itemized rows stay consistent.
+- [ ] Detect orphaned simulator artifacts by diffing on-disk device and runtime directories against the current simulator inventory, report them explicitly, and make cleanup opt-in rather than folding them invisibly into normal simulator rows.
 - [ ] Decide and document the intended meaning of `Total Xcode Footprint`: all major standard Xcode-managed storage with non-trivial size, excluding tiny preference and personal-state data.
 - [ ] Expand footprint accounting to include additional major Xcode-managed storage that is currently omitted, starting with `~/Library/Developer/Xcode/DocumentationCache`.
 - [ ] Audit other standard Xcode storage roots for inclusion, such as result and log storage and similar non-trivial caches, and explicitly decide include versus exclude for each.
