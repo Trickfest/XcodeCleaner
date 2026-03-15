@@ -4,10 +4,9 @@ GUI-first native macOS tooling (Swift + SwiftUI) to inventory, understand, and c
 
 ## Version
 
-- Current pre-release: `0.90`
-- Target: `1.0`
+- Current version: `1.0`
 
-This project is in a `1.0`-stabilization phase: the core functionality is in place, and the remaining work is mainly QA, documentation, and release packaging decisions.
+This repository now presents itself as version `1.0`, while some cleanup, QA, documentation, and release-adjacent polish work is still ongoing.
 
 ## Requirements
 
@@ -420,4 +419,3 @@ CLANG_MODULE_CACHE_PATH=$PWD/.build/clang-module-cache \
 SWIFTPM_MODULECACHE_OVERRIDE=$PWD/.build/swift-module-cache \
 swift run --disable-sandbox xcodecleaner-cli automation trends --format json
 ```
-

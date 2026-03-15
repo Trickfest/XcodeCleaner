@@ -1,6 +1,6 @@
 # Development TODO
 
-Last updated: 2026-03-12
+Last updated: 2026-03-14
 
 ## Recently Completed
 
@@ -10,8 +10,26 @@ Last updated: 2026-03-12
 - [x] Add a repo-local Xcode project and bundled macOS app build path for the GUI app.
 - [x] Wire the generated app icon assets into the bundled GUI app target.
 
+## Accounting And Cleanup Follow-Up
+
+- [ ] Fix simulator runtime accounting so `Total Xcode Footprint` includes runtime storage from the actual runtime bundle paths reported by `simctl`, not just `/Library/Developer/CoreSimulator/Profiles/Runtimes`.
+- [ ] Rework simulator aggregate sizing to dedupe runtime paths, device data paths, caches, and any volume-backed runtime storage so totals and itemized rows do not diverge.
+- [ ] Decide and document the intended meaning of `Total Xcode Footprint`: all major standard Xcode-managed storage with non-trivial size, excluding tiny preference and personal-state data.
+- [ ] Expand footprint accounting to include additional major Xcode-managed storage that is currently omitted, starting with `~/Library/Developer/Xcode/DocumentationCache`.
+- [ ] Audit other standard Xcode storage roots for inclusion, such as result and log storage and similar non-trivial caches, and explicitly decide include versus exclude for each.
+- [ ] Keep personal preference and state locations out of the normal footprint total for now, including Xcode preferences, saved application state, and small `UserData` state.
+- [ ] Add tests that cover modern simulator runtime layouts, especially volume-backed runtime locations under `/Library/Developer/CoreSimulator/Volumes/...`.
+- [ ] Add tests that verify aggregate totals match the union of tracked major storage roots and do not undercount when runtime bundle paths live outside the old hardcoded path.
+- [ ] Update UI labeling and README wording so the footprint number's scope is explicit and matches the implementation.
+- [ ] Expand cleanup scope in phases rather than all at once.
+- [ ] First cleanup expansion candidate: make `DocumentationCache` visible and optionally cleanable, but not part of the default safe cleanup set.
+- [ ] Classify new cleanup candidates by safety and recovery cost so the app distinguishes default-safe cleanup from explicit opt-in cleanup.
+- [ ] Preserve the current default-safe cleanup posture for ordinary use; broadening accounting should not automatically broaden default deletion.
+- [ ] Design a separate destructive full-removal workflow inside the app later, likely as an isolated destructive section within `Cleanup`, not as normal cleanup toggles.
+- [ ] When the full-removal workflow is built, include explicit scope groups, strong warnings, dry-run preview, and confirmation steps for personal state and remove-everything actions.
+
 ## Next Milestones
 
 - [ ] Do a post-packaging GUI QA and documentation pass.
 - [ ] Make the repository public on GitHub.
-- [ ] Do an official 1.0 release.
+- [ ] Finish post-1.0 cleanup and release follow-through.

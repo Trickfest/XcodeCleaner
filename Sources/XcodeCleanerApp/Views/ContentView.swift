@@ -30,7 +30,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("XcodeCleaner")
                     .font(.largeTitle.bold())
-                Text("Version 0.90")
+                Text(AppPresentation.appVersionDisplay)
                     .foregroundStyle(.secondary)
             }
             Spacer()

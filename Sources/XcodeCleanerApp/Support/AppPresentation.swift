@@ -14,6 +14,15 @@ func defaultAutomationStateDirectory() -> URL {
 
 @MainActor
 enum AppPresentation {
+    static var appVersionDisplay: String {
+        let fallbackVersion = "1.0"
+        let bundleVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        let version = bundleVersion?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nonEmptyValue ?? fallbackVersion
+        return "Version \(version)"
+    }
+
     static func title(for kind: StorageCategoryKind) -> String {
         switch kind {
         case .xcodeApplications:
@@ -272,6 +281,12 @@ enum AppPresentation {
         formatter.unitsStyle = .full
         return formatter
     }()
+}
+
+private extension String {
+    var nonEmptyValue: String? {
+        isEmpty ? nil : self
+    }
 }
 
 enum AutomationStatusTone {
