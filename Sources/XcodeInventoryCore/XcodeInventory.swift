@@ -361,7 +361,6 @@ public enum DryRunItemKind: String, Codable, Sendable {
     case xcodeInstall
     case staleSimulatorDevice
     case staleSimulatorRuntime
-    case staleDeviceSupport
 }
 
 public struct DryRunPlanItem: Codable, Equatable, Identifiable, Sendable {
@@ -542,7 +541,6 @@ public enum StaleArtifactKind: String, Codable, Sendable {
     case simulatorRuntime
     case orphanedSimulatorRuntime
     case orphanedSimulatorDevice
-    case deviceSupportDirectory
 }
 
 public struct StaleArtifactCandidate: Codable, Equatable, Identifiable, Sendable {

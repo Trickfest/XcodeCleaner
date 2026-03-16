@@ -95,7 +95,7 @@ struct CLIProgressRendererTests {
         let options = try CLIOptions.parse(arguments: [
             "--clean-stale-artifacts",
             "--stale-artifact", "simulatorRuntime:/tmp/runtime.simruntime",
-            "--stale-artifact=deviceSupportDirectory:/tmp/DeviceSupport/15.0",
+            "--stale-artifact=orphanedSimulatorDevice:/tmp/home/Library/Developer/CoreSimulator/Devices/ORPHAN-SIM-2",
             "--allow-direct-delete",
             "--skip-if-tools-running",
         ])
@@ -103,7 +103,7 @@ struct CLIProgressRendererTests {
         #expect(options.allowDirectDelete == true)
         #expect(options.skipIfToolsRunning == true)
         #expect(options.selectedStaleArtifactIDs == [
-            "deviceSupportDirectory:/tmp/DeviceSupport/15.0",
+            "orphanedSimulatorDevice:/tmp/home/Library/Developer/CoreSimulator/Devices/ORPHAN-SIM-2",
             "simulatorRuntime:/tmp/runtime.simruntime",
         ])
     }

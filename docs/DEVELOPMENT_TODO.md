@@ -17,7 +17,7 @@ Last updated: 2026-03-16
 - [x] Detect orphaned simulator artifacts by diffing on-disk device and runtime directories against the current simulator inventory, report them explicitly, and make cleanup opt-in rather than folding them invisibly into normal simulator rows.
 - [x] Verify simulator runtime cleanup on modern CoreSimulator layouts, since plain Trash/direct-delete file removal may be blocked by macOS for volume-backed runtimes; confirm whether a system-supported removal path is required before treating runtime cleanup as fully supported.
 - [x] Migrate cleanup of known simulator devices from direct filesystem deletion to `simctl` so registered CoreSimulator objects are removed through Apple-supported commands.
-- [ ] Support both legacy version-first and newer model-prefixed `iOS DeviceSupport` directory names when detecting stale Device Support folders, preferring `Info.plist` metadata over folder-name-only parsing where possible.
+- [x] Improve physical `iOS DeviceSupport` inventory metadata for both legacy version-first and newer model-prefixed directory names, using folder parsing plus `Info.plist` fallback where helpful, and leave cleanup decisions to the user instead of stale-device heuristics.
 - [ ] Decide and document the intended meaning of `Total Xcode Footprint`: all major standard Xcode-managed storage with non-trivial size, excluding tiny preference and personal-state data.
 - [ ] Expand footprint accounting to include additional major Xcode-managed storage that is currently omitted, starting with `~/Library/Developer/Xcode/DocumentationCache`.
 - [ ] Audit other standard Xcode storage roots for inclusion, such as result and log storage and similar non-trivial caches, and explicitly decide include versus exclude for each.

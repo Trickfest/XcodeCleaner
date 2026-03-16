@@ -98,43 +98,6 @@ public struct StaleArtifactDetector: @unchecked Sendable {
         candidates.append(contentsOf: orphanedSimulatorDevices)
         candidates.append(contentsOf: orphanedSimulatorRuntimes)
 
-        let deviceSupportRoots = snapshot.storage.categories
-            .first(where: { $0.kind == .deviceSupport })?
-            .paths ?? []
-        for rootPath in deviceSupportRoots {
-            let rootURL = URL(filePath: rootPath, directoryHint: .isDirectory)
-            let childDirectories = directoryLister.childDirectoryURLs(at: rootURL)
-            let parsed = childDirectories.compactMap { url -> (url: URL, version: SemanticVersion)? in
-                guard let version = parseLeadingVersion(from: url.lastPathComponent) else {
-                    return nil
-                }
-                return (url, version)
-            }
-            let sorted = parsed.sorted { lhs, rhs in lhs.version > rhs.version }
-
-            // Keep the two newest parsed versions; older version folders are stale candidates.
-            let stale = Array(sorted.dropFirst(2))
-            if sorted.count > 2 {
-                notes.append("Detected stale Device Support directories by keeping the two newest parsed versions under \(normalize(path: rootPath)).")
-            }
-
-            for entry in stale {
-                let path = normalize(path: entry.url.path)
-                let bytes = pathSizer.fileExists(at: entry.url) ? pathSizer.allocatedSize(at: entry.url) : 0
-                candidates.append(
-                    StaleArtifactCandidate(
-                        id: "\(StaleArtifactKind.deviceSupportDirectory.rawValue):\(path)",
-                        kind: .deviceSupportDirectory,
-                        title: "Stale Device Support: \(entry.url.lastPathComponent)",
-                        path: path,
-                        reclaimableBytes: bytes,
-                        reason: "Older Device Support directory; newest two parsed versions are retained.",
-                        safetyClassification: .regenerable
-                    )
-                )
-            }
-        }
-
         candidates.sort { lhs, rhs in
             if lhs.reclaimableBytes != rhs.reclaimableBytes {
                 return lhs.reclaimableBytes > rhs.reclaimableBytes
@@ -146,7 +109,7 @@ public struct StaleArtifactDetector: @unchecked Sendable {
         }
 
         if candidates.isEmpty {
-            notes.append("No stale runtime, orphaned simulator, or Device Support candidates were detected.")
+            notes.append("No stale runtime or orphaned simulator candidates were detected.")
         }
 
         let total = candidates.reduce(Int64(0)) { partial, candidate in
@@ -252,22 +215,6 @@ public struct StaleArtifactDetector: @unchecked Sendable {
         return discovered
     }
 
-    private func parseLeadingVersion(from name: String) -> SemanticVersion? {
-        let prefix = name.prefix { character in
-            character.isNumber || character == "."
-        }
-        guard !prefix.isEmpty else {
-            return nil
-        }
-        let parts = prefix.split(separator: ".", omittingEmptySubsequences: true)
-        guard let major = parts.first.flatMap({ Int($0) }) else {
-            return nil
-        }
-        let minor = parts.count > 1 ? Int(parts[1]) ?? 0 : 0
-        let patch = parts.count > 2 ? Int(parts[2]) ?? 0 : 0
-        return SemanticVersion(major: major, minor: minor, patch: patch)
-    }
-
     private func normalize(path: String) -> String {
         URL(filePath: path).standardizedFileURL.resolvingSymlinksInPath().path
     }
@@ -346,8 +293,6 @@ public enum StaleArtifactPlanner {
             return .staleSimulatorRuntime
         case .orphanedSimulatorDevice:
             return .staleSimulatorDevice
-        case .deviceSupportDirectory:
-            return .staleDeviceSupport
         }
     }
 }
@@ -453,21 +398,5 @@ public struct ActiveXcodeSwitcher: @unchecked Sendable {
 
     private func normalize(path: String) -> String {
         URL(filePath: path).standardizedFileURL.resolvingSymlinksInPath().path
-    }
-}
-
-private struct SemanticVersion: Comparable {
-    let major: Int
-    let minor: Int
-    let patch: Int
-
-    static func < (lhs: SemanticVersion, rhs: SemanticVersion) -> Bool {
-        if lhs.major != rhs.major {
-            return lhs.major < rhs.major
-        }
-        if lhs.minor != rhs.minor {
-            return lhs.minor < rhs.minor
-        }
-        return lhs.patch < rhs.patch
     }
 }

@@ -327,7 +327,7 @@ struct XcodeInventoryScannerTests {
         #expect(snapshot.simulator.devices.isEmpty)
     }
 
-    @Test("Scanner enumerates physical Device Support directories with metadata")
+    @Test("Scanner enumerates physical Device Support directories across naming styles")
     func scannerEnumeratesPhysicalDeviceSupportDirectories() throws {
         let sandbox = try TemporaryDirectory.make()
         defer { sandbox.cleanup() }
@@ -337,16 +337,29 @@ struct XcodeInventoryScannerTests {
             .appendingPathComponent("Library/Developer/Xcode/iOS DeviceSupport", isDirectory: true)
         let directory18 = deviceSupportRoot.appendingPathComponent("18.0 (22A123)", isDirectory: true)
         let directory17 = deviceSupportRoot.appendingPathComponent("17.5 (21F90) arm64e", isDirectory: true)
+        let directory26 = deviceSupportRoot.appendingPathComponent("iPhone17,2 26.3 (23D127)", isDirectory: true)
+        let directoryFallback = deviceSupportRoot.appendingPathComponent("LegacySupport", isDirectory: true)
         try FileManager.default.createDirectory(at: directory18, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: directory17, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: directory26, withIntermediateDirectories: true)
+        try writePropertyList(
+            [
+                "Version": "16.7",
+                "BuildVersion": "20H19",
+                "ProductType": "iPhone12,1",
+            ],
+            to: directoryFallback.appendingPathComponent("Info.plist")
+        )
 
         let scanner = XcodeInventoryScanner(
             applicationDiscoverer: StubDiscoverer(urls: []),
             activeDeveloperDirectoryProvider: StubActiveDeveloperProvider(url: nil),
             pathSizer: StubPathSizer(sizeByPath: [
-                deviceSupportRoot.path: 900,
+                deviceSupportRoot.path: 1_400,
+                directory26.path: 300,
                 directory18.path: 500,
                 directory17.path: 400,
+                directoryFallback.path: 200,
             ]),
             homeDirectoryProvider: StubHomeDirectoryProvider(url: fakeHome),
             runningApplicationsProvider: StubRunningApplicationsProvider(records: []),
@@ -358,18 +371,78 @@ struct XcodeInventoryScannerTests {
 
         let snapshot = scanner.scan()
 
-        #expect(snapshot.physicalDeviceSupportDirectories.count == 2)
-        #expect(snapshot.physicalDeviceSupportDirectories[0].name == "18.0 (22A123)")
-        #expect(snapshot.physicalDeviceSupportDirectories[0].parsedOSVersion == "18.0")
-        #expect(snapshot.physicalDeviceSupportDirectories[0].parsedBuild == "22A123")
-        #expect(snapshot.physicalDeviceSupportDirectories[0].parsedDescriptor == nil)
-        #expect(snapshot.physicalDeviceSupportDirectories[0].sizeInBytes == 500)
+        #expect(snapshot.physicalDeviceSupportDirectories.count == 4)
+        #expect(snapshot.physicalDeviceSupportDirectories.first?.name == "iPhone17,2 26.3 (23D127)")
 
-        #expect(snapshot.physicalDeviceSupportDirectories[1].name == "17.5 (21F90) arm64e")
-        #expect(snapshot.physicalDeviceSupportDirectories[1].parsedOSVersion == "17.5")
-        #expect(snapshot.physicalDeviceSupportDirectories[1].parsedBuild == "21F90")
-        #expect(snapshot.physicalDeviceSupportDirectories[1].parsedDescriptor == "arm64e")
-        #expect(snapshot.physicalDeviceSupportDirectories[1].sizeInBytes == 400)
+        let recordsByName = Dictionary(
+            uniqueKeysWithValues: snapshot.physicalDeviceSupportDirectories.map { ($0.name, $0) }
+        )
+
+        #expect(recordsByName["18.0 (22A123)"]?.parsedOSVersion == "18.0")
+        #expect(recordsByName["18.0 (22A123)"]?.parsedBuild == "22A123")
+        #expect(recordsByName["18.0 (22A123)"]?.parsedDescriptor == nil)
+        #expect(recordsByName["18.0 (22A123)"]?.sizeInBytes == 500)
+
+        #expect(recordsByName["17.5 (21F90) arm64e"]?.parsedOSVersion == "17.5")
+        #expect(recordsByName["17.5 (21F90) arm64e"]?.parsedBuild == "21F90")
+        #expect(recordsByName["17.5 (21F90) arm64e"]?.parsedDescriptor == "arm64e")
+        #expect(recordsByName["17.5 (21F90) arm64e"]?.sizeInBytes == 400)
+
+        #expect(recordsByName["iPhone17,2 26.3 (23D127)"]?.parsedOSVersion == "26.3")
+        #expect(recordsByName["iPhone17,2 26.3 (23D127)"]?.parsedBuild == "23D127")
+        #expect(recordsByName["iPhone17,2 26.3 (23D127)"]?.parsedDescriptor == "iPhone17,2")
+        #expect(recordsByName["iPhone17,2 26.3 (23D127)"]?.sizeInBytes == 300)
+
+        #expect(recordsByName["LegacySupport"]?.parsedOSVersion == "16.7")
+        #expect(recordsByName["LegacySupport"]?.parsedBuild == "20H19")
+        #expect(recordsByName["LegacySupport"]?.parsedDescriptor == "iPhone12,1")
+        #expect(recordsByName["LegacySupport"]?.sizeInBytes == 200)
+    }
+
+    @Test("Scanner prefers parseable Device Support folder metadata over conflicting Info.plist values")
+    func scannerPrefersDeviceSupportFolderMetadataWhenAvailable() throws {
+        let sandbox = try TemporaryDirectory.make()
+        defer { sandbox.cleanup() }
+
+        let fakeHome = sandbox.url.appendingPathComponent("fake-home", isDirectory: true)
+        let deviceSupportRoot = fakeHome
+            .appendingPathComponent("Library/Developer/Xcode/iOS DeviceSupport", isDirectory: true)
+        let conflictingDirectory = deviceSupportRoot
+            .appendingPathComponent("iPhone17,2 26.3 (23D127)", isDirectory: true)
+        try FileManager.default.createDirectory(at: conflictingDirectory, withIntermediateDirectories: true)
+        try writePropertyList(
+            [
+                "Version": "26.0",
+                "BuildVersion": "23A111",
+                "ProductType": "iPhone18,3",
+            ],
+            to: conflictingDirectory.appendingPathComponent("Info.plist")
+        )
+
+        let scanner = XcodeInventoryScanner(
+            applicationDiscoverer: StubDiscoverer(urls: []),
+            activeDeveloperDirectoryProvider: StubActiveDeveloperProvider(url: nil),
+            pathSizer: StubPathSizer(sizeByPath: [
+                deviceSupportRoot.path: 300,
+                conflictingDirectory.path: 300,
+            ]),
+            homeDirectoryProvider: StubHomeDirectoryProvider(url: fakeHome),
+            runningApplicationsProvider: StubRunningApplicationsProvider(records: []),
+            simulatorListingProvider: StubSimulatorListingProvider(
+                listing: SimulatorListing(devices: [], runtimes: [])
+            ),
+            now: { Date(timeIntervalSince1970: 200) }
+        )
+
+        let snapshot = scanner.scan()
+
+        #expect(snapshot.physicalDeviceSupportDirectories.count == 1)
+        let record = try #require(snapshot.physicalDeviceSupportDirectories.first)
+        #expect(record.name == "iPhone17,2 26.3 (23D127)")
+        #expect(record.parsedOSVersion == "26.3")
+        #expect(record.parsedBuild == "23D127")
+        #expect(record.parsedDescriptor == "iPhone17,2")
+        #expect(record.sizeInBytes == 300)
     }
 
     @Test("Scanner emits monotonic progress updates with stable phase order")
@@ -645,6 +718,19 @@ private func makeFakeXcodeApp(
     try plistData.write(to: contentsURL.appendingPathComponent("Info.plist"))
 
     return appURL
+}
+
+private func writePropertyList(_ dictionary: [String: Any], to url: URL) throws {
+    try FileManager.default.createDirectory(
+        at: url.deletingLastPathComponent(),
+        withIntermediateDirectories: true
+    )
+    let plistData = try PropertyListSerialization.data(
+        fromPropertyList: dictionary,
+        format: .xml,
+        options: 0
+    )
+    try plistData.write(to: url)
 }
 
 private func bytes(for kind: StorageCategoryKind, in snapshot: XcodeInventorySnapshot) -> Int64 {

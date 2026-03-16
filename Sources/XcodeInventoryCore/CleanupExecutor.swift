@@ -382,11 +382,6 @@ public struct CleanupExecutor: @unchecked Sendable {
                 return "Blocked: close running Xcode instances before deleting physical Device Support directories."
             }
             return nil
-        case .staleDeviceSupport:
-            if snapshot.runtimeTelemetry.totalXcodeRunningInstances > 0 {
-                return "Blocked: close running Xcode instances before deleting stale Device Support artifacts."
-            }
-            return nil
         }
     }
 
@@ -473,7 +468,7 @@ public struct CleanupExecutor: @unchecked Sendable {
             guard item.staleArtifactKind == .simulatorRuntime else {
                 return nil
             }
-        case .deviceSupportDirectory, .xcodeInstall, .staleSimulatorDevice, .staleDeviceSupport:
+        case .deviceSupportDirectory, .xcodeInstall, .staleSimulatorDevice:
             return nil
         }
 

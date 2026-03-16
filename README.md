@@ -81,7 +81,7 @@ Prebuilt signed/notarized distribution is optional future work, not a current re
   - GUI aggregate category selection for Derived Data, MobileDevice Crash Logs, Archives, and Simulator Data.
   - GUI itemized selection for simulator runtimes, simulator devices, Xcode installs, and physical device support directories.
   - CLI selectors for categories, simulator devices, and Xcode installs.
-  - CLI stale-artifact list/clean modes for stale simulator runtimes, orphaned simulator device data, and stale physical device support directories. Orphaned simulator runtimes are reported but not deleted in-app.
+  - CLI stale-artifact list/clean modes for stale simulator runtimes and orphaned simulator device data. Orphaned simulator runtimes are reported but not deleted in-app.
 - Active Xcode switching:
   - GUI and CLI support using `xcode-select`, with result verification against the newly active developer directory.
 - Automation and reporting:
@@ -350,7 +350,7 @@ Clean only one stale candidate by ID:
 xc --clean-stale-artifacts --skip-if-tools-running --stale-artifact <CANDIDATE_ID>
 ```
 
-This is currently the CLI path for targeted cleanup of stale simulator runtimes, orphaned simulator device data, and stale physical device support directories. Orphaned simulator runtimes stay report-only.
+This is currently the CLI path for targeted cleanup of stale simulator runtimes and orphaned simulator device data. Orphaned simulator runtimes stay report-only, and physical `iOS DeviceSupport` directories remain an explicit GUI itemized-cleanup workflow.
 
 ### 7. Switch the active Xcode
 
@@ -383,6 +383,7 @@ The command verifies the resulting active developer directory after `xcode-selec
   - Simulator devices
   - Xcode installs
   - Physical Device Support directories (`~/Library/Developer/Xcode/iOS DeviceSupport/*`)
+- Physical `iOS DeviceSupport` directories are presented individually so you can choose what to remove; the app does not auto-label older ones as stale.
 - GUI intentionally does not expose aggregate cleanup toggles for:
   - `Xcode Applications`
   - Aggregate `Device Support`
@@ -393,10 +394,10 @@ The command verifies the resulting active developer directory after `xcode-selec
   - `--plan-xcode-install <path>`
 - Current GUI/CLI parity gaps to be aware of:
   - The GUI can select individual simulator runtimes for cleanup; the main CLI dry-run/execute path cannot. In the CLI, simulator runtimes are only directly targetable through stale-artifact cleanup when they are reported as stale.
-  - The GUI can select individual physical device support directories for cleanup; the main CLI dry-run/execute path cannot. In the CLI, those directories are directly targetable only through stale-artifact cleanup when they are reported as stale.
+  - The GUI can select individual physical device support directories for cleanup; the main CLI dry-run/execute path cannot, and there is currently no CLI stale-artifact shortcut for them.
   - The GUI can build mixed itemized cleanup plans that include simulator runtimes and physical device support directories together with other selections. The CLI currently splits that experience between main planning mode and stale-artifact mode.
 - Those gaps are acceptable for the current product direction because the GUI is the primary cleanup surface and the CLI is positioned as an advanced companion, not a full mirror of every GUI workflow.
-- CLI stale-artifact cleanup covers stale simulator runtimes, orphaned simulator device data, and stale physical device support directories. Orphaned simulator runtimes are report-only.
+- CLI stale-artifact cleanup covers stale simulator runtimes and orphaned simulator device data. Orphaned simulator runtimes are report-only.
 - When aggregate and itemized selections would double count the same reclaimable bytes, the planner removes the aggregate entry and records a plan note.
 
 ## Automation and Report State

@@ -3,7 +3,7 @@ import Testing
 @testable import XcodeInventoryCore
 
 struct ModificationToolsTests {
-    @Test("Stale artifact detector finds stale runtimes, orphaned simulator artifacts, and older Device Support directories")
+    @Test("Stale artifact detector finds stale runtimes and orphaned simulator artifacts")
     func detectStaleArtifacts() {
         let snapshot = makeModificationSnapshot()
         let detector = StaleArtifactDetector(
@@ -43,14 +43,13 @@ struct ModificationToolsTests {
                         URL(filePath: "/tmp/DeviceSupport/17.5 (21F90)", directoryHint: .isDirectory),
                         URL(filePath: "/tmp/DeviceSupport/16.4 (20E247)", directoryHint: .isDirectory),
                         URL(filePath: "/tmp/DeviceSupport/Unknown", directoryHint: .isDirectory),
-                    ]
+                    ],
                 ]
             ),
             pathSizer: StubModificationPathSizer(
                 sizeByPath: [
                     "/tmp/home/Library/Developer/CoreSimulator/Devices/ORPHAN-SIM-2": 80,
                     "/Library/Developer/CoreSimulator/Volumes/iOS_ORPHANED/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 16.4.simruntime": 700,
-                    "/tmp/DeviceSupport/16.4 (20E247)": 300,
                 ]
             ),
             homeDirectoryProvider: StubModificationHomeDirectoryProvider(
@@ -62,16 +61,16 @@ struct ModificationToolsTests {
         let report = detector.detect(snapshot: snapshot)
 
         #expect(report.generatedAt == Date(timeIntervalSince1970: 1_000))
-        #expect(report.candidates.count == 4)
-        #expect(report.totalReclaimableBytes == 300 + 500 + 700 + 80)
+        #expect(report.candidates.count == 3)
+        #expect(report.totalReclaimableBytes == 500 + 700 + 80)
         #expect(report.candidates.contains(where: { $0.kind == .simulatorRuntime && $0.path == "/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 17.0.simruntime" }))
         #expect(report.candidates.contains(where: { $0.kind == .orphanedSimulatorRuntime && $0.path == "/Library/Developer/CoreSimulator/Volumes/iOS_ORPHANED/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 16.4.simruntime" }))
         #expect(report.candidates.contains(where: { $0.kind == .orphanedSimulatorDevice && $0.path == "/tmp/home/Library/Developer/CoreSimulator/Devices/ORPHAN-SIM-2" }))
-        #expect(report.candidates.contains(where: { $0.kind == .deviceSupportDirectory && $0.path == "/tmp/DeviceSupport/16.4 (20E247)" }))
+        #expect(report.candidates.contains(where: { $0.path == "/tmp/DeviceSupport/16.4 (20E247)" }) == false)
         #expect(report.notes.contains(where: { $0.contains("orphaned simulator artifact") }))
     }
 
-    @Test("Stale artifact planner selects requested IDs and builds deterministic plan")
+    @Test("Stale artifact planner selects requested stale simulator candidates and builds deterministic plan")
     func staleArtifactPlannerSelection() {
         let snapshot = makeModificationSnapshot()
         let report = StaleArtifactReport(
@@ -86,32 +85,23 @@ struct ModificationToolsTests {
                     reason: "Unused.",
                     safetyClassification: .conditionallySafe
                 ),
-                StaleArtifactCandidate(
-                    id: "deviceSupportDirectory:/tmp/DeviceSupport/16.4 (20E247)",
-                    kind: .deviceSupportDirectory,
-                    title: "Stale Device Support: 16.4 (20E247)",
-                    path: "/tmp/DeviceSupport/16.4 (20E247)",
-                    reclaimableBytes: 300,
-                    reason: "Older Device Support directory.",
-                    safetyClassification: .regenerable
-                ),
             ],
-            totalReclaimableBytes: 800,
+            totalReclaimableBytes: 500,
             notes: []
         )
 
         let plan = StaleArtifactPlanner.makePlan(
             snapshot: snapshot,
             report: report,
-            selectedCandidateIDs: ["deviceSupportDirectory:/tmp/DeviceSupport/16.4 (20E247)"],
+            selectedCandidateIDs: ["simulatorRuntime:/tmp/Runtime-17.simruntime"],
             now: Date(timeIntervalSince1970: 20)
         )
 
         #expect(plan.generatedAt == Date(timeIntervalSince1970: 20))
         #expect(plan.items.count == 1)
-        #expect(plan.items[0].kind == .staleDeviceSupport)
-        #expect(plan.items[0].staleArtifactID == "deviceSupportDirectory:/tmp/DeviceSupport/16.4 (20E247)")
-        #expect(plan.totalReclaimableBytes == 300)
+        #expect(plan.items[0].kind == .staleSimulatorRuntime)
+        #expect(plan.items[0].staleArtifactID == "simulatorRuntime:/tmp/Runtime-17.simruntime")
+        #expect(plan.totalReclaimableBytes == 500)
     }
 
     @Test("Stale artifact planner maps orphaned simulator device candidates to stale simulator device cleanup")

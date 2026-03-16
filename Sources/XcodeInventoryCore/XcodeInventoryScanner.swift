@@ -380,7 +380,7 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
                     continue
                 }
 
-                let parsed = parsePhysicalDeviceSupportDirectoryName(childURL.lastPathComponent)
+                let parsed = parsePhysicalDeviceSupportDirectoryMetadata(at: childURL)
                 let sizeInBytes = pathSizer.fileExists(at: childURL) ? pathSizer.allocatedSize(at: childURL) : 0
                 discovered.append((
                     record: PhysicalDeviceSupportDirectoryRecord(
@@ -429,6 +429,20 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
         }
 
         return discovered.map(\.record)
+    }
+
+    private func parsePhysicalDeviceSupportDirectoryMetadata(
+        at directoryURL: URL
+    ) -> ParsedPhysicalDeviceSupportDirectoryName {
+        let nameParsed = parsePhysicalDeviceSupportDirectoryName(directoryURL.lastPathComponent)
+        let plistParsed = parsePhysicalDeviceSupportInfoPlist(at: directoryURL)
+
+        return ParsedPhysicalDeviceSupportDirectoryName(
+            osVersion: nameParsed.osVersion ?? plistParsed.osVersion,
+            build: nameParsed.build ?? plistParsed.build,
+            descriptor: nameParsed.descriptor ?? plistParsed.descriptor,
+            semanticVersion: nameParsed.semanticVersion ?? plistParsed.semanticVersion
+        )
     }
 
     private func buildSimulatorInventory(from listing: SimulatorListing) -> SimulatorInventory {
@@ -658,28 +672,29 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
             )
         }
 
-        let versionPrefix = trimmed.prefix { character in
-            character.isNumber || character == "."
+        let tokens = trimmed.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard let versionIndex = tokens.firstIndex(where: { parseSemanticVersion(from: $0) != nil }) else {
+            return ParsedPhysicalDeviceSupportDirectoryName(
+                osVersion: nil,
+                build: nil,
+                descriptor: nil,
+                semanticVersion: nil
+            )
         }
-        let osVersion: String? = versionPrefix.isEmpty ? nil : String(versionPrefix)
-        var remainder = osVersion.map { String(trimmed.dropFirst($0.count)) } ?? trimmed
-        remainder = remainder.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        var build: String?
-        if remainder.hasPrefix("("),
-           let closeIndex = remainder.firstIndex(of: ")") {
-            let valueStart = remainder.index(after: remainder.startIndex)
-            let rawBuild = remainder[valueStart..<closeIndex]
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            if !rawBuild.isEmpty {
-                build = String(rawBuild)
+        let osVersion = tokens[versionIndex]
+        let buildIndex = tokens.indices.dropFirst(versionIndex + 1).first { index in
+            parsePhysicalDeviceSupportBuildToken(tokens[index]) != nil
+        }
+        let build = buildIndex.flatMap { parsePhysicalDeviceSupportBuildToken(tokens[$0]) }
+        let descriptorTokens = tokens.enumerated().compactMap { index, token -> String? in
+            if index == versionIndex || index == buildIndex {
+                return nil
             }
-            remainder = String(remainder[remainder.index(after: closeIndex)...])
-                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return token
         }
-
-        let descriptor = remainder.isEmpty ? nil : remainder
-        let semanticVersion = osVersion.flatMap(parseSemanticVersion(from:))
+        let descriptor = descriptorTokens.isEmpty ? nil : descriptorTokens.joined(separator: " ")
+        let semanticVersion = parseSemanticVersion(from: osVersion)
 
         return ParsedPhysicalDeviceSupportDirectoryName(
             osVersion: osVersion,
@@ -689,14 +704,74 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
         )
     }
 
+    private func parsePhysicalDeviceSupportInfoPlist(
+        at directoryURL: URL
+    ) -> ParsedPhysicalDeviceSupportDirectoryName {
+        let infoPlistURL = directoryURL.appendingPathComponent("Info.plist", isDirectory: false)
+        guard let data = try? Data(contentsOf: infoPlistURL),
+              let value = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
+              let info = value as? [String: Any] else {
+            return ParsedPhysicalDeviceSupportDirectoryName(
+                osVersion: nil,
+                build: nil,
+                descriptor: nil,
+                semanticVersion: nil
+            )
+        }
+
+        let osVersion = firstNonEmptyString(
+            in: info,
+            keys: ["Version", "ProductVersion", "RuntimeVersion"]
+        )
+        let build = firstNonEmptyString(
+            in: info,
+            keys: ["Build", "BuildVersion", "ProductBuildVersion"]
+        )
+        let descriptor = firstNonEmptyString(
+            in: info,
+            keys: ["ProductType", "SupportedProductType", "DeviceType", "DeviceName", "Name"]
+        )
+
+        return ParsedPhysicalDeviceSupportDirectoryName(
+            osVersion: osVersion,
+            build: build,
+            descriptor: descriptor,
+            semanticVersion: osVersion.flatMap(parseSemanticVersion(from:))
+        )
+    }
+
+    private func parsePhysicalDeviceSupportBuildToken(_ token: String) -> String? {
+        guard token.hasPrefix("("), token.hasSuffix(")") else {
+            return nil
+        }
+        let inner = token.dropFirst().dropLast().trimmingCharacters(in: .whitespacesAndNewlines)
+        return inner.isEmpty ? nil : String(inner)
+    }
+
     private func parseSemanticVersion(from value: String) -> PhysicalDeviceSupportSemanticVersion? {
         let parts = value.split(separator: ".", omittingEmptySubsequences: true)
         guard let major = parts.first.flatMap({ Int($0) }) else {
             return nil
         }
+        guard parts.count <= 3 else {
+            return nil
+        }
         let minor = parts.count > 1 ? Int(parts[1]) ?? 0 : 0
         let patch = parts.count > 2 ? Int(parts[2]) ?? 0 : 0
         return PhysicalDeviceSupportSemanticVersion(major: major, minor: minor, patch: patch)
+    }
+
+    private func firstNonEmptyString(in dictionary: [String: Any], keys: [String]) -> String? {
+        for key in keys {
+            guard let value = dictionary[key] as? String else {
+                continue
+            }
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                return trimmed
+            }
+        }
+        return nil
     }
 
     private func normalizedPath(for url: URL?) -> String? {

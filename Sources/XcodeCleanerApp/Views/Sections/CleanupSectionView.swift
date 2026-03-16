@@ -467,9 +467,9 @@ struct CleanupSectionView: View {
         return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Stale And Orphaned Artifacts")
+                    Text("Stale And Orphaned Simulator Artifacts")
                         .font(.headline)
-                    Text("Explicit leftover simulator and device support artifacts. Nothing is preselected; review and opt in before cleanup. Orphaned simulator runtimes are report-only.")
+                    Text("Explicit leftover simulator artifacts. Nothing is preselected; review and opt in before cleanup. Orphaned simulator runtimes are report-only.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -499,7 +499,7 @@ struct CleanupSectionView: View {
             }
 
             if report.candidates.isEmpty {
-                Text("No stale or orphaned artifacts detected in the current scan.")
+                Text("No stale or orphaned simulator artifacts detected in the current scan.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
@@ -556,7 +556,7 @@ struct CleanupSectionView: View {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Dedicated Cleanup")
                     .font(.subheadline.weight(.semibold))
-                Text("Uses the execute options above and runs through the stale-artifact cleanup path rather than the normal cleanup plan.")
+                Text("Uses the execute options above and runs through the dedicated simulator stale-artifact cleanup path rather than the normal cleanup plan.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -579,12 +579,12 @@ struct CleanupSectionView: View {
                         HStack(spacing: 8) {
                             ProgressView()
                                 .controlSize(.small)
-                            Text("Executing stale/orphaned cleanup...")
+                            Text("Executing stale/orphaned simulator cleanup...")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     } else if executeBlockedByRunningTools {
-                        Text("Stale/orphaned cleanup is blocked while tools are running (Xcode: \(runningXcodeInstances), Simulator app: \(runningSimulatorAppInstances), booted devices: \(bootedSimulatorDeviceCount)). Close tools or disable the block option above.")
+                        Text("Stale/orphaned simulator cleanup is blocked while tools are running (Xcode: \(runningXcodeInstances), Simulator app: \(runningSimulatorAppInstances), booted devices: \(bootedSimulatorDeviceCount)). Close tools or disable the block option above.")
                             .font(.caption)
                             .foregroundStyle(.orange)
                     } else {
@@ -596,7 +596,7 @@ struct CleanupSectionView: View {
             }
 
             if let report = viewModel.lastStaleArtifactExecutionReport {
-                ExecutionReportView(title: "Last Stale/Orphaned Cleanup", report: report)
+                ExecutionReportView(title: "Last Stale/Orphaned Simulator Cleanup", report: report)
             }
         }
         .padding(10)

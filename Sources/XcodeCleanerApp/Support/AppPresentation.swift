@@ -120,7 +120,7 @@ enum AppPresentation {
             switch candidate.kind {
             case .orphanedSimulatorRuntime, .orphanedSimulatorDevice:
                 return true
-            case .simulatorRuntime, .deviceSupportDirectory:
+            case .simulatorRuntime:
                 return false
             }
         }.count
@@ -134,14 +134,12 @@ enum AppPresentation {
             return "Orphaned Simulator Runtimes"
         case .orphanedSimulatorDevice:
             return "Orphaned Simulator Device Data"
-        case .deviceSupportDirectory:
-            return "Stale Device Support Directories"
         }
     }
 
     static func staleArtifactBadgeText(for kind: StaleArtifactKind) -> String {
         switch kind {
-        case .simulatorRuntime, .deviceSupportDirectory:
+        case .simulatorRuntime:
             return "STALE"
         case .orphanedSimulatorRuntime, .orphanedSimulatorDevice:
             return "ORPHANED"
@@ -150,7 +148,7 @@ enum AppPresentation {
 
     static func staleArtifactBadgeColor(for kind: StaleArtifactKind) -> Color {
         switch kind {
-        case .simulatorRuntime, .deviceSupportDirectory:
+        case .simulatorRuntime:
             return Color.orange.opacity(0.2)
         case .orphanedSimulatorRuntime, .orphanedSimulatorDevice:
             return Color.red.opacity(0.18)
@@ -165,7 +163,7 @@ enum AppPresentation {
         switch kind {
         case .orphanedSimulatorRuntime:
             return "Manual cleanup only. The app reports the path but does not delete orphaned runtimes."
-        case .simulatorRuntime, .orphanedSimulatorDevice, .deviceSupportDirectory:
+        case .simulatorRuntime, .orphanedSimulatorDevice:
             return nil
         }
     }
@@ -178,8 +176,6 @@ enum AppPresentation {
             return 1
         case .orphanedSimulatorDevice:
             return 2
-        case .deviceSupportDirectory:
-            return 3
         }
     }
 
