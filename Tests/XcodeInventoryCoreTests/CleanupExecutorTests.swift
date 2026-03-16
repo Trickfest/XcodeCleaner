@@ -38,9 +38,10 @@ struct CleanupExecutorTests {
             fileOperator: StubCleanupFileOperator(
                 existingPaths: [
                     "/Applications/Xcode-Old.app",
-                    "/tmp/CoreSimulator/Devices/SIM-SHUT",
                 ]
             ),
+            simulatorRuntimeManager: StubSimulatorRuntimeManager(),
+            simulatorDeviceManager: StubSimulatorDeviceManager(),
             pathSizer: StubExecutionPathSizer(
                 sizeByPath: [
                     "/Applications/Xcode-Old.app": 200,
@@ -171,6 +172,42 @@ struct CleanupExecutorTests {
         #expect(report.totalReclaimedBytes == 0)
     }
 
+    @Test("Cleanup executor uses simctl for known simulator device cleanup")
+    func executorUsesSimctlForKnownSimulatorDeviceCleanup() {
+        let snapshot = makeExecutionSnapshot(
+            runningXcodeInstances: 0,
+            runningSimulatorAppInstances: 0,
+            bootedDeviceState: "Shutdown",
+            bootedDeviceRunningInstances: 0
+        )
+        let selection = DryRunSelection(
+            selectedCategoryKinds: [],
+            selectedSimulatorDeviceUDIDs: ["SIM-SHUT"],
+            selectedXcodeInstallPaths: []
+        )
+        let deviceManager = StubSimulatorDeviceManager()
+
+        let executor = CleanupExecutor(
+            fileOperator: StubCleanupFileOperator(existingPaths: []),
+            simulatorRuntimeManager: StubSimulatorRuntimeManager(),
+            simulatorDeviceManager: deviceManager,
+            pathSizer: StubExecutionPathSizer(
+                sizeByPath: ["/tmp/CoreSimulator/Devices/SIM-SHUT": 60]
+            ),
+            now: { Date(timeIntervalSince1970: 944) }
+        )
+
+        let report = executor.execute(snapshot: snapshot, selection: selection, allowDirectDelete: false)
+
+        #expect(report.results.count == 1)
+        #expect(report.succeededCount == 1)
+        #expect(report.failedCount == 0)
+        #expect(report.totalReclaimedBytes == 60)
+        #expect(report.results.first?.operation == .simctlDelete)
+        #expect(report.results.first?.pathResults.first?.operation == .simctlDelete)
+        #expect(deviceManager.deletedUDIDs == ["SIM-SHUT"])
+    }
+
     @Test("Cleanup executor uses simctl for known simulator runtime cleanup")
     func executorUsesSimctlForKnownSimulatorRuntimeCleanup() {
         let snapshot = makeExecutionSnapshot(
@@ -190,7 +227,10 @@ struct CleanupExecutorTests {
         let executor = CleanupExecutor(
             fileOperator: StubCleanupFileOperator(existingPaths: []),
             simulatorRuntimeManager: runtimeManager,
-            pathSizer: StubExecutionPathSizer(sizeByPath: [:]),
+            simulatorDeviceManager: StubSimulatorDeviceManager(),
+            pathSizer: StubExecutionPathSizer(
+                sizeByPath: ["/tmp/CoreSimulator/Profiles/Runtimes/iOS-19.simruntime": 70]
+            ),
             now: { Date(timeIntervalSince1970: 945) }
         )
 
@@ -284,6 +324,41 @@ struct CleanupExecutorTests {
         #expect(report.results.first?.pathResults.first?.message.contains("simctl runtime delete failed") == true)
     }
 
+    @Test("Cleanup executor reports simctl device delete failures")
+    func executorReportsSimctlDeviceDeleteFailures() {
+        let snapshot = makeExecutionSnapshot(
+            runningXcodeInstances: 0,
+            runningSimulatorAppInstances: 0,
+            bootedDeviceState: "Shutdown",
+            bootedDeviceRunningInstances: 0
+        )
+        let selection = DryRunSelection(
+            selectedCategoryKinds: [],
+            selectedSimulatorDeviceUDIDs: ["SIM-SHUT"],
+            selectedXcodeInstallPaths: []
+        )
+        let deviceManager = StubSimulatorDeviceManager(failUDIDs: ["SIM-SHUT"])
+
+        let executor = CleanupExecutor(
+            fileOperator: StubCleanupFileOperator(existingPaths: []),
+            simulatorRuntimeManager: StubSimulatorRuntimeManager(),
+            simulatorDeviceManager: deviceManager,
+            pathSizer: StubExecutionPathSizer(
+                sizeByPath: ["/tmp/CoreSimulator/Devices/SIM-SHUT": 60]
+            ),
+            now: { Date(timeIntervalSince1970: 947) }
+        )
+
+        let report = executor.execute(snapshot: snapshot, selection: selection, allowDirectDelete: false)
+
+        #expect(report.results.count == 1)
+        #expect(report.failedCount == 1)
+        #expect(report.succeededCount == 0)
+        #expect(report.totalReclaimedBytes == 0)
+        #expect(report.results.first?.status == .failed)
+        #expect(report.results.first?.pathResults.first?.message.contains("simctl delete failed") == true)
+    }
+
     @Test("Cleanup executor blocks orphaned simulator runtime cleanup as manual-only")
     func executorBlocksOrphanedSimulatorRuntimeCleanup() {
         let snapshot = makeExecutionSnapshot(
@@ -330,6 +405,50 @@ struct CleanupExecutorTests {
         #expect(report.results.first?.status == .blocked)
         #expect(report.results.first?.message.contains("manual cleanup only") == true)
         #expect(runtimeManager.deletedIdentifiers.isEmpty)
+    }
+
+    @Test("Cleanup executor uses simctl for known simulator objects inside aggregate Simulator Data cleanup")
+    func executorUsesSimctlInsideAggregateSimulatorDataCleanup() {
+        let snapshot = makeAggregateSimulatorDataSnapshot()
+        let selection = DryRunSelection(
+            selectedCategoryKinds: [.simulatorData],
+            selectedSimulatorDeviceUDIDs: [],
+            selectedXcodeInstallPaths: []
+        )
+        let runtimeManager = StubSimulatorRuntimeManager()
+        let deviceManager = StubSimulatorDeviceManager()
+
+        let executor = CleanupExecutor(
+            fileOperator: StubCleanupFileOperator(
+                existingPaths: ["/tmp/CoreSimulator/Caches/dyld-cache"],
+                moveToTrashFailPaths: []
+            ),
+            simulatorRuntimeManager: runtimeManager,
+            simulatorDeviceManager: deviceManager,
+            pathSizer: StubExecutionPathSizer(
+                sizeByPath: [
+                    "/tmp/CoreSimulator/Devices/SIM-SHUT": 60,
+                    "/tmp/CoreSimulator/Profiles/Runtimes/iOS-19.simruntime": 70,
+                    "/tmp/CoreSimulator/Caches/dyld-cache": 15,
+                ]
+            ),
+            now: { Date(timeIntervalSince1970: 951) }
+        )
+
+        let report = executor.execute(snapshot: snapshot, selection: selection, allowDirectDelete: false)
+
+        #expect(report.results.count == 1)
+        #expect(report.succeededCount == 1)
+        #expect(report.failedCount == 0)
+        #expect(report.totalReclaimedBytes == 145)
+        #expect(report.results.first?.operation == .mixed)
+
+        let pathResults = Dictionary(uniqueKeysWithValues: report.results[0].pathResults.map { ($0.path, $0) })
+        #expect(pathResults["/tmp/CoreSimulator/Devices/SIM-SHUT"]?.operation == .simctlDelete)
+        #expect(pathResults["/tmp/CoreSimulator/Profiles/Runtimes/iOS-19.simruntime"]?.operation == .simctlDelete)
+        #expect(pathResults["/tmp/CoreSimulator/Caches/dyld-cache"]?.operation == .moveToTrash)
+        #expect(deviceManager.deletedUDIDs == ["SIM-SHUT"])
+        #expect(runtimeManager.deletedIdentifiers == ["runtime-1"])
     }
 
     @Test("Cleanup executor allows explicit orphaned simulator device cleanup through stale-artifact plans")
@@ -400,6 +519,22 @@ private final class StubSimulatorRuntimeManager: SimulatorRuntimeManaging {
             throw StubCleanupError.removeItemFailed
         }
         deletedIdentifiers.append(identifier)
+    }
+}
+
+private final class StubSimulatorDeviceManager: SimulatorDeviceManaging {
+    private(set) var deletedUDIDs: [String] = []
+    let failUDIDs: Set<String>
+
+    init(failUDIDs: Set<String> = []) {
+        self.failUDIDs = failUDIDs
+    }
+
+    func deleteDevice(udid: String) throws {
+        if failUDIDs.contains(udid) {
+            throw StubCleanupError.removeItemFailed
+        }
+        deletedUDIDs.append(udid)
     }
 }
 
@@ -576,6 +711,65 @@ private func makeExecutionSnapshot(
             totalXcodeRunningInstances: runningXcodeInstances,
             totalSimulatorAppRunningInstances: runningSimulatorAppInstances
         )
+    )
+}
+
+private func makeAggregateSimulatorDataSnapshot() -> XcodeInventorySnapshot {
+    let simulator = SimulatorInventory(
+        devices: [
+            SimulatorDeviceRecord(
+                udid: "SIM-SHUT",
+                name: "iPhone 16",
+                runtimeIdentifier: "runtime-1",
+                runtimeName: "iOS 19.0",
+                state: "Shutdown",
+                isAvailable: true,
+                dataPath: "/tmp/CoreSimulator/Devices/SIM-SHUT",
+                sizeInBytes: 60,
+                runningInstanceCount: 0,
+                ownershipSummary: "Owned by simulator device data",
+                safetyClassification: .conditionallySafe
+            ),
+        ],
+        runtimes: [
+            SimulatorRuntimeRecord(
+                identifier: "runtime-1",
+                name: "iOS 19.0",
+                version: "19.0",
+                isAvailable: true,
+                bundlePath: "/tmp/CoreSimulator/Profiles/Runtimes/iOS-19.simruntime",
+                sizeInBytes: 70,
+                ownershipSummary: "Owned by CoreSimulator runtime files",
+                safetyClassification: .conditionallySafe
+            ),
+        ]
+    )
+
+    let storage = XcodeStorageUsage(
+        categories: [
+            StorageCategoryUsage(
+                kind: .simulatorData,
+                title: "Simulator Data",
+                bytes: 145,
+                paths: [
+                    "/tmp/CoreSimulator/Devices/SIM-SHUT",
+                    "/tmp/CoreSimulator/Profiles/Runtimes/iOS-19.simruntime",
+                    "/tmp/CoreSimulator/Caches/dyld-cache",
+                ],
+                ownershipSummary: "Owned by CoreSimulator devices, runtimes, and caches",
+                safetyClassification: .conditionallySafe
+            ),
+        ],
+        totalBytes: 145
+    )
+
+    return XcodeInventorySnapshot(
+        scannedAt: Date(timeIntervalSince1970: 200),
+        activeDeveloperDirectoryPath: nil,
+        installs: [],
+        storage: storage,
+        simulator: simulator,
+        runtimeTelemetry: RuntimeTelemetry(totalXcodeRunningInstances: 0, totalSimulatorAppRunningInstances: 0)
     )
 }
 

@@ -74,6 +74,7 @@ Prebuilt signed/notarized distribution is optional future work, not a current re
 - Cleanup planning and execution:
   - Shared dry-run planning with deterministic ordering, reclaim estimates, and plan notes.
   - Move-to-trash first, with optional direct-delete fallback.
+  - Known simulator runtimes and known simulator devices are removed through `simctl`; filesystem deletion remains for ordinary cache/artifact paths and orphaned leftovers.
   - Guardrails for active/running Xcode installs and running/booted simulator devices.
   - Optional global block while Xcode or the Simulator app is running.
 - Targeted cleanup controls:
@@ -305,7 +306,7 @@ Execute cleanup for that device:
 xc --execute --skip-if-tools-running --plan-simulator-device <UDID>
 ```
 
-This removes the selected simulator device's data directory, not all simulator data.
+This removes the selected registered simulator device through `simctl`, which deletes that device and its apps/files/state, but not all simulator data or simulator runtimes.
 
 ### 5. Remove one old Xcode install
 

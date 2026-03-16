@@ -313,7 +313,7 @@ struct CleanupSectionView: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("Simulator Devices")
                     .font(.callout.weight(.medium))
-                Text("Deletes selected device data only (apps/files/state), not simulator runtimes or caches.")
+                Text("Deletes selected registered simulator devices via simctl, including their apps/files/state, but not simulator runtimes or caches.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

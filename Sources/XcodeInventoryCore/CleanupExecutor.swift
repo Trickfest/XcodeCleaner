@@ -45,20 +45,42 @@ public struct SimctlSimulatorRuntimeManager: SimulatorRuntimeManaging {
     }
 }
 
+public protocol SimulatorDeviceManaging {
+    func deleteDevice(udid: String) throws
+}
+
+public struct SimctlSimulatorDeviceManager: SimulatorDeviceManaging {
+    private let commandRunner: CommandRunning
+
+    public init(commandRunner: CommandRunning = ProcessCommandRunner()) {
+        self.commandRunner = commandRunner
+    }
+
+    public func deleteDevice(udid: String) throws {
+        _ = try commandRunner.run(
+            launchPath: "/usr/bin/xcrun",
+            arguments: ["simctl", "delete", udid]
+        )
+    }
+}
+
 public struct CleanupExecutor: @unchecked Sendable {
     private let fileOperator: CleanupFileOperating
     private let simulatorRuntimeManager: SimulatorRuntimeManaging
+    private let simulatorDeviceManager: SimulatorDeviceManaging
     private let pathSizer: PathSizing
     private let now: () -> Date
 
     public init(
         fileOperator: CleanupFileOperating = FileManagerCleanupFileOperator(),
         simulatorRuntimeManager: SimulatorRuntimeManaging = SimctlSimulatorRuntimeManager(),
+        simulatorDeviceManager: SimulatorDeviceManaging = SimctlSimulatorDeviceManager(),
         pathSizer: PathSizing = FileSystemPathSizer(),
         now: @escaping () -> Date = Date.init
     ) {
         self.fileOperator = fileOperator
         self.simulatorRuntimeManager = simulatorRuntimeManager
+        self.simulatorDeviceManager = simulatorDeviceManager
         self.pathSizer = pathSizer
         self.now = now
     }
@@ -129,12 +151,23 @@ public struct CleanupExecutor: @unchecked Sendable {
             }
 
             let pathResults = item.paths.map { path in
-                if let runtimeIdentifier = simulatorRuntimeIdentifier(for: item, in: snapshot) {
-                    return executeKnownSimulatorRuntime(
-                        identifier: runtimeIdentifier,
-                        path: path,
-                        reclaimableBytes: item.reclaimableBytes
-                    )
+                if let target = knownSimulatorCleanupTarget(
+                    for: path,
+                    in: item,
+                    snapshot: snapshot
+                ) {
+                    switch target {
+                    case .runtime(let identifier):
+                        return executeKnownSimulatorRuntime(
+                            identifier: identifier,
+                            path: path
+                        )
+                    case .device(let udid):
+                        return executeKnownSimulatorDevice(
+                            udid: udid,
+                            path: path
+                        )
+                    }
                 }
 
                 return executePath(
@@ -410,36 +443,66 @@ public struct CleanupExecutor: @unchecked Sendable {
         URL(filePath: path).standardizedFileURL.resolvingSymlinksInPath().path
     }
 
-    private func simulatorRuntimeIdentifier(
-        for item: DryRunPlanItem,
-        in snapshot: XcodeInventorySnapshot
-    ) -> String? {
+    private enum KnownSimulatorCleanupTarget {
+        case runtime(identifier: String)
+        case device(udid: String)
+    }
+
+    private func knownSimulatorCleanupTarget(
+        for path: String,
+        in item: DryRunPlanItem,
+        snapshot: XcodeInventorySnapshot
+    ) -> KnownSimulatorCleanupTarget? {
+        let normalizedPath = normalize(path: path)
+
         switch item.kind {
+        case .storageCategory:
+            guard item.storageCategoryKind == .simulatorData else {
+                return nil
+            }
+        case .simulatorDevice:
+            if let device = snapshot.simulator.devices.first(where: {
+                normalize(path: $0.dataPath) == normalizedPath
+            }) {
+                return .device(udid: device.udid)
+            }
+            return nil
         case .simulatorRuntime:
             break
         case .staleSimulatorRuntime:
             guard item.staleArtifactKind == .simulatorRuntime else {
                 return nil
             }
-        case .storageCategory, .simulatorDevice, .deviceSupportDirectory, .xcodeInstall, .staleSimulatorDevice, .staleDeviceSupport:
+        case .deviceSupportDirectory, .xcodeInstall, .staleSimulatorDevice, .staleDeviceSupport:
             return nil
         }
 
-        let selectedPaths = Set(item.paths.map(normalize(path:)))
-        return snapshot.simulator.runtimes.first(where: { runtime in
+        if let device = snapshot.simulator.devices.first(where: {
+            normalize(path: $0.dataPath) == normalizedPath
+        }) {
+            return .device(udid: device.udid)
+        }
+
+        if let runtime = snapshot.simulator.runtimes.first(where: { runtime in
             guard let bundlePath = runtime.bundlePath else {
                 return false
             }
-            return selectedPaths.contains(normalize(path: bundlePath))
-        })?.identifier
+            return normalize(path: bundlePath) == normalizedPath
+        }) {
+            return .runtime(identifier: runtime.identifier)
+        }
+
+        return nil
     }
 
     private func executeKnownSimulatorRuntime(
         identifier: String,
-        path: String,
-        reclaimableBytes: Int64
+        path: String
     ) -> CleanupPathResult {
         let normalizedPath = normalize(path: path)
+        let reclaimableBytes = pathSizer.allocatedSize(
+            at: URL(filePath: normalizedPath, directoryHint: .inferFromPath)
+        )
         do {
             try simulatorRuntimeManager.deleteRuntime(identifier: identifier)
             return CleanupPathResult(
@@ -456,6 +519,34 @@ public struct CleanupExecutor: @unchecked Sendable {
                 operation: .none,
                 reclaimedBytes: 0,
                 message: "simctl runtime delete failed for \(identifier). Error: \(error.localizedDescription)"
+            )
+        }
+    }
+
+    private func executeKnownSimulatorDevice(
+        udid: String,
+        path: String
+    ) -> CleanupPathResult {
+        let normalizedPath = normalize(path: path)
+        let reclaimableBytes = pathSizer.allocatedSize(
+            at: URL(filePath: normalizedPath, directoryHint: .inferFromPath)
+        )
+        do {
+            try simulatorDeviceManager.deleteDevice(udid: udid)
+            return CleanupPathResult(
+                path: normalizedPath,
+                status: .succeeded,
+                operation: .simctlDelete,
+                reclaimedBytes: reclaimableBytes,
+                message: "Deleted via simctl delete."
+            )
+        } catch {
+            return CleanupPathResult(
+                path: normalizedPath,
+                status: .failed,
+                operation: .none,
+                reclaimedBytes: 0,
+                message: "simctl delete failed for \(udid). Error: \(error.localizedDescription)"
             )
         }
     }

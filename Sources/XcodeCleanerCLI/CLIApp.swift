@@ -615,7 +615,7 @@ func printUsage(toStandardError: Bool = false) {
       - mobileDeviceCrashLogs: Crash/log capture folders under ~/Library/Logs/CrashReporter/MobileDevice.
       - archives: Archived app builds under ~/Library/Developer/Xcode/Archives.
       - deviceSupport: Aggregate delete of all physical-device support directories under ~/Library/Developer/Xcode/iOS DeviceSupport.
-      - simulatorData: Aggregate delete of CoreSimulator devices/caches/runtimes roots.
+      - simulatorData: Aggregate delete of CoreSimulator devices/caches/runtimes roots. Known registered devices and runtimes are removed via simctl when possible.
     """
     if toStandardError {
         writeToStandardError("\(usage)\n")
