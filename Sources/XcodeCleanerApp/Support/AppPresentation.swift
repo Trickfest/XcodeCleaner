@@ -51,7 +51,7 @@ enum AppPresentation {
         case .archives:
             return "Archived app builds"
         case .deviceSupport:
-            return "All physical-device support folders (CLI aggregate mode)"
+            return "All physical device support folders (CLI aggregate mode)"
         case .simulatorData:
             return "CoreSimulator devices/caches/runtimes"
         }
@@ -157,6 +157,19 @@ enum AppPresentation {
         }
     }
 
+    static func staleArtifactIsReportOnly(_ kind: StaleArtifactKind) -> Bool {
+        kind == .orphanedSimulatorRuntime
+    }
+
+    static func staleArtifactActionHint(for kind: StaleArtifactKind) -> String? {
+        switch kind {
+        case .orphanedSimulatorRuntime:
+            return "Manual cleanup only. The app reports the path but does not delete orphaned runtimes."
+        case .simulatorRuntime, .orphanedSimulatorDevice, .deviceSupportDirectory:
+            return nil
+        }
+    }
+
     static func staleArtifactGroupOrder(for kind: StaleArtifactKind) -> Int {
         switch kind {
         case .simulatorRuntime:
@@ -167,6 +180,28 @@ enum AppPresentation {
             return 2
         case .deviceSupportDirectory:
             return 3
+        }
+    }
+
+    static func orphanedSimulatorRuntimeCandidates(in report: StaleArtifactReport?) -> [StaleArtifactCandidate] {
+        guard let report else {
+            return []
+        }
+        return report.candidates.filter { $0.kind == .orphanedSimulatorRuntime }
+    }
+
+    static func cleanupOperationLabel(_ operation: CleanupOperation) -> String {
+        switch operation {
+        case .moveToTrash:
+            return "moveToTrash"
+        case .directDelete:
+            return "directDelete"
+        case .simctlDelete:
+            return "simctlDelete"
+        case .mixed:
+            return "mixed"
+        case .none:
+            return "none"
         }
     }
 

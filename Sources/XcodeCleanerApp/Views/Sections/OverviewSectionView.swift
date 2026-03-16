@@ -221,6 +221,9 @@ struct OverviewSectionView: View {
         let orphanedSimulatorArtifactCount = AppPresentation.orphanedSimulatorArtifactCount(
             in: viewModel.staleArtifactReport
         )
+        let orphanedRuntimeCandidates = AppPresentation.orphanedSimulatorRuntimeCandidates(
+            in: viewModel.staleArtifactReport
+        )
         let staleRuntimeCount = snapshot.simulator.runtimes.filter { runtime in
             !(runtimeStaleReasonsByIdentifier[runtime.identifier] ?? []).isEmpty
         }.count
@@ -235,10 +238,43 @@ struct OverviewSectionView: View {
             Text("Devices: \(snapshot.simulator.devices.count), Runtimes: \(snapshot.simulator.runtimes.count), Stale devices: \(staleDeviceCount), Stale runtimes: \(staleRuntimeCount), Orphaned simulator artifacts: \(orphanedSimulatorArtifactCount)")
                 .font(.callout.monospacedDigit())
                 .foregroundStyle(.secondary)
-            if orphanedSimulatorArtifactCount > 0 {
-                Text("Review orphaned simulator artifacts in Cleanup > Stale And Orphaned Artifacts.")
+            if !orphanedRuntimeCandidates.isEmpty {
+                Text("Orphaned simulator runtimes are reported here for manual cleanup; the app does not delete them.")
                     .font(.caption)
                     .foregroundStyle(.orange)
+            } else if orphanedSimulatorArtifactCount > 0 {
+                Text("Review orphaned simulator artifacts in Cleanup > Stale And Orphaned Artifacts.")
+                .font(.caption)
+                .foregroundStyle(.orange)
+            }
+
+            if !orphanedRuntimeCandidates.isEmpty {
+                Text("Orphaned Simulator Runtimes")
+                    .font(.subheadline.weight(.semibold))
+                ForEach(orphanedRuntimeCandidates) { candidate in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(candidate.title)
+                                .font(.callout.weight(.medium))
+                            Spacer()
+                            Text(AppPresentation.formatBytes(candidate.reclaimableBytes))
+                                .font(.callout.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
+                        Text(candidate.reason)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(candidate.path)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                        Text("Manual cleanup only")
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.orange)
+                    }
+                    .padding(8)
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                }
             }
 
             Text("Simulator Runtimes")

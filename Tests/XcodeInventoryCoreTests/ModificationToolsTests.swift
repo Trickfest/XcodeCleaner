@@ -148,6 +148,39 @@ struct ModificationToolsTests {
         #expect(plan.totalReclaimableBytes == 80)
     }
 
+    @Test("Stale artifact planner keeps orphaned simulator runtimes report-only")
+    func staleArtifactPlannerLeavesOrphanedRuntimesAsReportOnly() {
+        let snapshot = makeModificationSnapshot()
+        let report = StaleArtifactReport(
+            generatedAt: Date(timeIntervalSince1970: 10),
+            candidates: [
+                StaleArtifactCandidate(
+                    id: "orphanedSimulatorRuntime:/Library/Developer/CoreSimulator/Volumes/ORPHAN/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 19.1.simruntime",
+                    kind: .orphanedSimulatorRuntime,
+                    title: "Orphaned Simulator Runtime: iOS 19.1",
+                    path: "/Library/Developer/CoreSimulator/Volumes/ORPHAN/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 19.1.simruntime",
+                    reclaimableBytes: 700,
+                    reason: "Runtime bundle exists on disk but is not present in the current simulator inventory.",
+                    safetyClassification: .conditionallySafe
+                ),
+            ],
+            totalReclaimableBytes: 700,
+            notes: []
+        )
+
+        let plan = StaleArtifactPlanner.makePlan(
+            snapshot: snapshot,
+            report: report,
+            selectedCandidateIDs: ["orphanedSimulatorRuntime:/Library/Developer/CoreSimulator/Volumes/ORPHAN/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 19.1.simruntime"],
+            now: Date(timeIntervalSince1970: 20)
+        )
+
+        #expect(plan.generatedAt == Date(timeIntervalSince1970: 20))
+        #expect(plan.items.isEmpty)
+        #expect(plan.totalReclaimableBytes == 0)
+        #expect(plan.notes.contains(where: { $0.contains("report-only") }))
+    }
+
     @Test("Stale artifact planner can require explicit candidate selection")
     func staleArtifactPlannerExplicitSelectionMode() {
         let snapshot = makeModificationSnapshot()

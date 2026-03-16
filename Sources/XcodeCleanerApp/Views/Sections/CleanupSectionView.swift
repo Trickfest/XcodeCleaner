@@ -156,7 +156,7 @@ struct CleanupSectionView: View {
                 Text("Execute Options and Status")
                     .font(.subheadline.weight(.semibold))
                 Toggle(
-                    "Block cleanup while Xcode/Simulator tools are running (recommended)",
+                    "Block cleanup while Xcode or the Simulator app is running (recommended)",
                     isOn: $selectionState.blockCleanupWhileToolsRunning
                 )
                 .font(.callout)
@@ -220,7 +220,7 @@ struct CleanupSectionView: View {
 
             Text("Categories")
                 .font(.callout.weight(.medium))
-            Text("Xcode app uninstall and physical-device support directory cleanup are managed in the itemized sections below.")
+            Text("Xcode app uninstall and physical device support directory cleanup are managed in the itemized sections below.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             ForEach(snapshot.storage.categories.filter { category in
@@ -250,7 +250,7 @@ struct CleanupSectionView: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("Simulator Runtimes")
                     .font(.callout.weight(.medium))
-                Text("Deletes selected runtime bundles. Blocked while Simulator app/devices are running.")
+                Text("Deletes selected known runtimes via simctl. Blocked while the Simulator app or booted devices are running.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -416,7 +416,7 @@ struct CleanupSectionView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             if snapshot.physicalDeviceSupportDirectories.isEmpty {
-                Text("No physical Device Support directories detected in this scan.")
+                Text("No physical device support directories detected in this scan.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
@@ -469,7 +469,7 @@ struct CleanupSectionView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Stale And Orphaned Artifacts")
                         .font(.headline)
-                    Text("Explicit leftover simulator and Device Support artifacts. Nothing is preselected; review and opt in before cleanup.")
+                    Text("Explicit leftover simulator and device support artifacts. Nothing is preselected; review and opt in before cleanup. Orphaned simulator runtimes are report-only.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -509,6 +509,7 @@ struct CleanupSectionView: View {
                             Text(AppPresentation.staleArtifactGroupTitle(for: kind))
                                 .font(.callout.weight(.medium))
                             ForEach(candidates) { candidate in
+                                let isReportOnly = AppPresentation.staleArtifactIsReportOnly(candidate.kind)
                                 Toggle(isOn: staleArtifactBinding(for: candidate.id)) {
                                     HStack {
                                         VStack(alignment: .leading, spacing: 3) {
@@ -531,6 +532,11 @@ struct CleanupSectionView: View {
                                             Text("Safety: \(candidate.safetyClassification.rawValue)")
                                                 .font(.caption.monospaced())
                                                 .foregroundStyle(AppPresentation.color(for: candidate.safetyClassification))
+                                            if let actionHint = AppPresentation.staleArtifactActionHint(for: candidate.kind) {
+                                                Text(actionHint)
+                                                    .font(.caption)
+                                                    .foregroundStyle(.orange)
+                                            }
                                         }
                                         Spacer()
                                         Text(AppPresentation.formatBytes(candidate.reclaimableBytes))
@@ -538,6 +544,7 @@ struct CleanupSectionView: View {
                                             .foregroundStyle(.secondary)
                                     }
                                 }
+                                .disabled(isReportOnly)
                             }
                         }
                     }

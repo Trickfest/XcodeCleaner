@@ -432,6 +432,7 @@ public enum CleanupActionStatus: String, Codable, Sendable {
 public enum CleanupOperation: String, Codable, Sendable {
     case moveToTrash
     case directDelete
+    case simctlDelete
     case mixed
     case none
 }

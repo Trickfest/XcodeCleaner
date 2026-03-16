@@ -60,9 +60,9 @@ Prebuilt signed/notarized distribution is optional future work, not a current re
 
 - Read-only inventory and accounting:
   - Xcode installs, active developer directory, version/build/path, ownership, and safety classification.
-  - Storage categories: Xcode apps, Derived Data, MobileDevice Crash Logs, Archives, iOS Device Support, Simulator data.
+  - Storage categories: Xcode apps, Derived Data, MobileDevice Crash Logs, Archives, iOS device support, Simulator data.
   - Itemized simulator runtimes and simulator devices with metadata, size, stale markers, and running-state information.
-  - Itemized physical Device Support directories with parsed metadata, modification dates, and size.
+  - Itemized physical device support directories with parsed metadata, modification dates, and size.
 - Runtime telemetry:
   - Running Xcode instance count.
   - Running Simulator app instance count.
@@ -75,12 +75,12 @@ Prebuilt signed/notarized distribution is optional future work, not a current re
   - Shared dry-run planning with deterministic ordering, reclaim estimates, and plan notes.
   - Move-to-trash first, with optional direct-delete fallback.
   - Guardrails for active/running Xcode installs and running/booted simulator devices.
-  - Optional global block while Xcode or Simulator tools are running.
+  - Optional global block while Xcode or the Simulator app is running.
 - Targeted cleanup controls:
   - GUI aggregate category selection for Derived Data, MobileDevice Crash Logs, Archives, and Simulator Data.
-  - GUI itemized selection for simulator runtimes, simulator devices, Xcode installs, and physical Device Support directories.
+  - GUI itemized selection for simulator runtimes, simulator devices, Xcode installs, and physical device support directories.
   - CLI selectors for categories, simulator devices, and Xcode installs.
-  - CLI stale-artifact list/clean modes for stale simulator runtimes and stale physical Device Support directories.
+  - CLI stale-artifact list/clean modes for stale simulator runtimes, orphaned simulator device data, and stale physical device support directories. Orphaned simulator runtimes are reported but not deleted in-app.
 - Active Xcode switching:
   - GUI and CLI support using `xcode-select`, with result verification against the newly active developer directory.
 - Automation and reporting:
@@ -97,7 +97,8 @@ The current macOS app is organized into four workflow sections in the sidebar.
 
 ### Overview
 
-- Runtime telemetry summary with running Xcode count, running Simulator count, stale runtime count, and stale device count.
+- Runtime telemetry summary with running Xcode count, running Simulator app count, stale runtime count, and stale device count.
+- Orphaned simulator runtime reporting, including on-disk paths for manual cleanup when detected.
 - Storage overview cards for every scanned category, including path lists, ownership summaries, and safety classification.
 - Xcode install inventory with active/running badges, version/build metadata, and install paths.
 - Active Xcode switch panel with a target picker, action button, and last switch result/status.
@@ -107,7 +108,7 @@ The current macOS app is organized into four workflow sections in the sidebar.
 
 - Shared dry-run plan preview with estimated reclaim size, planned item list, and any plan notes.
 - Execute controls for:
-  - Blocking cleanup while Xcode or Simulator tools are running.
+  - Blocking cleanup while Xcode or the Simulator app is running.
   - Allowing direct-delete fallback when move-to-trash fails.
 - Aggregate category toggles for:
   - `Derived Data`
@@ -118,7 +119,7 @@ The current macOS app is organized into four workflow sections in the sidebar.
   - Simulator runtimes
   - Simulator devices
   - Xcode installs
-  - Physical Device Support directories
+  - Physical device support directories
 - Inline stale markers for simulator runtimes and devices.
 - Cleanup execution status and the latest execution report.
 
@@ -348,7 +349,7 @@ Clean only one stale candidate by ID:
 xc --clean-stale-artifacts --skip-if-tools-running --stale-artifact <CANDIDATE_ID>
 ```
 
-This is currently the CLI path for targeted cleanup of stale simulator runtimes and stale physical Device Support directories.
+This is currently the CLI path for targeted cleanup of stale simulator runtimes, orphaned simulator device data, and stale physical device support directories. Orphaned simulator runtimes stay report-only.
 
 ### 7. Switch the active Xcode
 
@@ -391,10 +392,10 @@ The command verifies the resulting active developer directory after `xcode-selec
   - `--plan-xcode-install <path>`
 - Current GUI/CLI parity gaps to be aware of:
   - The GUI can select individual simulator runtimes for cleanup; the main CLI dry-run/execute path cannot. In the CLI, simulator runtimes are only directly targetable through stale-artifact cleanup when they are reported as stale.
-  - The GUI can select individual physical Device Support directories for cleanup; the main CLI dry-run/execute path cannot. In the CLI, those directories are directly targetable only through stale-artifact cleanup when they are reported as stale.
-  - The GUI can build mixed itemized cleanup plans that include simulator runtimes and physical Device Support directories together with other selections. The CLI currently splits that experience between main planning mode and stale-artifact mode.
+  - The GUI can select individual physical device support directories for cleanup; the main CLI dry-run/execute path cannot. In the CLI, those directories are directly targetable only through stale-artifact cleanup when they are reported as stale.
+  - The GUI can build mixed itemized cleanup plans that include simulator runtimes and physical device support directories together with other selections. The CLI currently splits that experience between main planning mode and stale-artifact mode.
 - Those gaps are acceptable for the current product direction because the GUI is the primary cleanup surface and the CLI is positioned as an advanced companion, not a full mirror of every GUI workflow.
-- CLI stale-artifact cleanup covers stale simulator runtimes and stale physical Device Support directories.
+- CLI stale-artifact cleanup covers stale simulator runtimes, orphaned simulator device data, and stale physical device support directories. Orphaned simulator runtimes are report-only.
 - When aggregate and itemized selections would double count the same reclaimable bytes, the planner removes the aggregate entry and records a plan note.
 
 ## Automation and Report State

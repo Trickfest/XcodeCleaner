@@ -40,7 +40,7 @@ struct ExecutionReportView: View {
                         .foregroundStyle(.secondary)
 
                     ForEach(result.pathResults) { pathResult in
-                        Text("\(pathResult.status.rawValue): \(pathResult.path) (\(pathResult.operation.rawValue), \(AppPresentation.formatBytes(pathResult.reclaimedBytes)))")
+                        Text("\(pathResult.status.rawValue): \(pathResult.path) (\(AppPresentation.cleanupOperationLabel(pathResult.operation)), \(AppPresentation.formatBytes(pathResult.reclaimedBytes)))")
                             .font(.caption.monospaced())
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)

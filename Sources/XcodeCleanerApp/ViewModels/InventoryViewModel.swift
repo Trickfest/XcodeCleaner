@@ -168,7 +168,7 @@ final class InventoryViewModel: ObservableObject {
             defaultToAllCandidatesWhenSelectionEmpty: false
         )
         guard !plan.items.isEmpty else {
-            staleArtifactStatusMessage = "No stale/orphaned artifacts selected for cleanup."
+            staleArtifactStatusMessage = plan.notes.first ?? "No stale/orphaned artifacts selected for cleanup."
             return
         }
 

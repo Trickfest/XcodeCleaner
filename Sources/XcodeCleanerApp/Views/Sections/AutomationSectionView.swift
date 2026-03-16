@@ -225,7 +225,7 @@ struct AutomationSectionView: View {
             Text("Categories")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
-            Text("Aggregate Xcode Applications and Device Support cleanup are CLI-only; GUI policies use explicit cleanup scope selection.")
+            Text("Aggregate Xcode Applications and device support cleanup are CLI-only; GUI policies use explicit cleanup scope selection.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
             ForEach(
@@ -237,7 +237,7 @@ struct AutomationSectionView: View {
                 }
             }
 
-            Toggle("Skip if Xcode/Simulator is running", isOn: $formState.skipIfToolsRunning)
+            Toggle("Skip if Xcode or the Simulator app is running", isOn: $formState.skipIfToolsRunning)
             Toggle("Allow direct delete fallback", isOn: $formState.allowDirectDelete)
 
             if let validationError = formState.validationError {

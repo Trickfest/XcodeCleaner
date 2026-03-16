@@ -289,7 +289,19 @@ public enum StaleArtifactPlanner {
             selectedCandidates = report.candidates.filter { selected.contains($0.id) }
         }
 
-        let items = selectedCandidates.map { candidate in
+        var notes: [String] = []
+        let executableCandidates = selectedCandidates.filter { candidate in
+            if candidate.kind == .orphanedSimulatorRuntime {
+                return false
+            }
+            return true
+        }
+
+        if selectedCandidates.contains(where: { $0.kind == .orphanedSimulatorRuntime }) {
+            notes.append("Orphaned simulator runtimes are report-only and are not included in cleanup plans.")
+        }
+
+        let items = executableCandidates.map { candidate in
             DryRunPlanItem(
                 kind: dryRunItemKind(for: candidate.kind),
                 staleArtifactID: candidate.id,
@@ -311,7 +323,6 @@ public enum StaleArtifactPlanner {
         let total = items.reduce(Int64(0)) { partial, item in
             partial + item.reclaimableBytes
         }
-        var notes: [String] = []
         if items.isEmpty {
             notes.append("No stale artifact plan items selected.")
         }

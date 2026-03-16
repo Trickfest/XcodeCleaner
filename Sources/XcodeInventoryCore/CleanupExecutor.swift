@@ -26,17 +26,39 @@ public struct FileManagerCleanupFileOperator: CleanupFileOperating {
     }
 }
 
+public protocol SimulatorRuntimeManaging {
+    func deleteRuntime(identifier: String) throws
+}
+
+public struct SimctlSimulatorRuntimeManager: SimulatorRuntimeManaging {
+    private let commandRunner: CommandRunning
+
+    public init(commandRunner: CommandRunning = ProcessCommandRunner()) {
+        self.commandRunner = commandRunner
+    }
+
+    public func deleteRuntime(identifier: String) throws {
+        _ = try commandRunner.run(
+            launchPath: "/usr/bin/xcrun",
+            arguments: ["simctl", "runtime", "delete", identifier]
+        )
+    }
+}
+
 public struct CleanupExecutor: @unchecked Sendable {
     private let fileOperator: CleanupFileOperating
+    private let simulatorRuntimeManager: SimulatorRuntimeManaging
     private let pathSizer: PathSizing
     private let now: () -> Date
 
     public init(
         fileOperator: CleanupFileOperating = FileManagerCleanupFileOperator(),
+        simulatorRuntimeManager: SimulatorRuntimeManaging = SimctlSimulatorRuntimeManager(),
         pathSizer: PathSizing = FileSystemPathSizer(),
         now: @escaping () -> Date = Date.init
     ) {
         self.fileOperator = fileOperator
+        self.simulatorRuntimeManager = simulatorRuntimeManager
         self.pathSizer = pathSizer
         self.now = now
     }
@@ -107,7 +129,15 @@ public struct CleanupExecutor: @unchecked Sendable {
             }
 
             let pathResults = item.paths.map { path in
-                executePath(
+                if let runtimeIdentifier = simulatorRuntimeIdentifier(for: item, in: snapshot) {
+                    return executeKnownSimulatorRuntime(
+                        identifier: runtimeIdentifier,
+                        path: path,
+                        reclaimableBytes: item.reclaimableBytes
+                    )
+                }
+
+                return executePath(
                     path: path,
                     allowlistedRoots: allowlistedRoots,
                     allowDirectDelete: allowDirectDelete
@@ -306,6 +336,9 @@ public struct CleanupExecutor: @unchecked Sendable {
             }
             return nil
         case .staleSimulatorDevice, .staleSimulatorRuntime:
+            if item.staleArtifactKind == .orphanedSimulatorRuntime {
+                return "Blocked: orphaned simulator runtimes are reported for manual cleanup only."
+            }
             if snapshot.runtimeTelemetry.totalSimulatorAppRunningInstances > 0
                 || snapshot.simulator.devices.contains(where: simulatorDeviceIsRunning) {
                 return "Blocked: close Simulator and shut down booted devices before deleting stale or orphaned simulator artifacts."
@@ -375,5 +408,55 @@ public struct CleanupExecutor: @unchecked Sendable {
 
     private func normalize(path: String) -> String {
         URL(filePath: path).standardizedFileURL.resolvingSymlinksInPath().path
+    }
+
+    private func simulatorRuntimeIdentifier(
+        for item: DryRunPlanItem,
+        in snapshot: XcodeInventorySnapshot
+    ) -> String? {
+        switch item.kind {
+        case .simulatorRuntime:
+            break
+        case .staleSimulatorRuntime:
+            guard item.staleArtifactKind == .simulatorRuntime else {
+                return nil
+            }
+        case .storageCategory, .simulatorDevice, .deviceSupportDirectory, .xcodeInstall, .staleSimulatorDevice, .staleDeviceSupport:
+            return nil
+        }
+
+        let selectedPaths = Set(item.paths.map(normalize(path:)))
+        return snapshot.simulator.runtimes.first(where: { runtime in
+            guard let bundlePath = runtime.bundlePath else {
+                return false
+            }
+            return selectedPaths.contains(normalize(path: bundlePath))
+        })?.identifier
+    }
+
+    private func executeKnownSimulatorRuntime(
+        identifier: String,
+        path: String,
+        reclaimableBytes: Int64
+    ) -> CleanupPathResult {
+        let normalizedPath = normalize(path: path)
+        do {
+            try simulatorRuntimeManager.deleteRuntime(identifier: identifier)
+            return CleanupPathResult(
+                path: normalizedPath,
+                status: .succeeded,
+                operation: .simctlDelete,
+                reclaimedBytes: reclaimableBytes,
+                message: "Deleted via simctl runtime delete."
+            )
+        } catch {
+            return CleanupPathResult(
+                path: normalizedPath,
+                status: .failed,
+                operation: .none,
+                reclaimedBytes: 0,
+                message: "simctl runtime delete failed for \(identifier). Error: \(error.localizedDescription)"
+            )
+        }
     }
 }
