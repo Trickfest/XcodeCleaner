@@ -6,6 +6,7 @@ struct OverviewSectionView: View {
     let snapshot: XcodeInventorySnapshot
 
     @State private var selectedSwitchInstallPath = ""
+    @State private var showingFootprintHelp = false
 
     var body: some View {
         ScrollView {
@@ -57,8 +58,20 @@ struct OverviewSectionView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Storage Overview")
                 .font(.headline)
-            Text("Total Xcode Footprint: \(AppPresentation.formatBytes(snapshot.storage.totalBytes))")
-                .font(.title3.weight(.semibold))
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("Total Xcode Footprint: \(AppPresentation.formatBytes(snapshot.storage.totalBytes))")
+                    .font(.title3.weight(.semibold))
+                Button {
+                    showingFootprintHelp = true
+                } label: {
+                    Image(systemName: "info.circle")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .popover(isPresented: $showingFootprintHelp, arrowEdge: .bottom) {
+                    footprintHelpPopover
+                }
+            }
 
             ForEach(snapshot.storage.categories) { category in
                 VStack(alignment: .leading, spacing: 4) {
@@ -88,6 +101,45 @@ struct OverviewSectionView: View {
                 .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
             }
         }
+    }
+
+    private var footprintHelpPopover: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Total Xcode Footprint")
+                .font(.headline)
+            Text(AppPresentation.totalFootprintDefinition)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Currently counted in this build")
+                    .font(.subheadline.weight(.semibold))
+                ForEach(
+                    Array(AppPresentation.totalFootprintIncludedItems(for: snapshot.storage.categories).enumerated()),
+                    id: \.offset
+                ) { _, item in
+                    Text("• \(item)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Not counted")
+                    .font(.subheadline.weight(.semibold))
+                ForEach(Array(AppPresentation.totalFootprintExcludedItems.enumerated()), id: \.offset) { _, item in
+                    Text("• \(item)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Text(AppPresentation.totalFootprintCleanupNote)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(16)
+        .frame(width: 440, alignment: .leading)
     }
 
     private var installInventoryView: some View {

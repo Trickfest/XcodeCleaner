@@ -92,6 +92,26 @@ Prebuilt signed/notarized distribution is optional future work, not a current re
   - Shared run history, trend summaries, and JSON/CSV exports.
   - Schema documentation: `docs/REPORT_SCHEMA.md`.
 
+## Total Xcode Footprint
+
+`Total Xcode Footprint` means the standard Xcode/CoreSimulator-managed storage currently counted by this build on this Mac. It is intended to answer "how much disk space is Xcode-related tooling using here?", not "what can the app safely delete right now?"
+
+Currently counted in this build:
+
+- Xcode application bundles
+- Derived Data
+- MobileDevice crash logs
+- Archives
+- Physical device support directories under `~/Library/Developer/Xcode/iOS DeviceSupport`
+- CoreSimulator device data, runtime bundles, and simulator caches
+
+Not counted:
+
+- External Xcode preference and saved-state locations such as `~/Library/Preferences` and `~/Library/Saved Application State`
+- Project source trees, repositories, and arbitrary package checkouts outside standard Xcode/CoreSimulator-managed roots
+
+Counted does not imply cleanable. Some roots contribute to the total footprint even when they are not exposed as cleanup targets in the current app build.
+
 ## GUI Workflow
 
 The current macOS app is organized into four workflow sections in the sidebar.

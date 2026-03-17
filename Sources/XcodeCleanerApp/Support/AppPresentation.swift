@@ -57,6 +57,40 @@ enum AppPresentation {
         }
     }
 
+    static var totalFootprintDefinition: String {
+        "Total Xcode Footprint is the sum of the standard Xcode and CoreSimulator storage roots currently counted by this build."
+    }
+
+    static var totalFootprintCleanupNote: String {
+        "Counted roots are not automatically cleanup targets. Cleanup support is tracked separately and is narrower than footprint accounting."
+    }
+
+    static var totalFootprintExcludedItems: [String] {
+        [
+            "External Xcode preference and saved-state locations such as ~/Library/Preferences and ~/Library/Saved Application State.",
+            "Project source trees, repositories, and arbitrary package checkouts outside standard Xcode/CoreSimulator-managed storage roots.",
+        ]
+    }
+
+    static func totalFootprintIncludedItems(for categories: [StorageCategoryUsage]) -> [String] {
+        categories.map { category in
+            switch category.kind {
+            case .xcodeApplications:
+                return "Xcode application bundles discovered in standard install locations."
+            case .derivedData:
+                return "Derived Data under ~/Library/Developer/Xcode/DerivedData."
+            case .mobileDeviceCrashLogs:
+                return "MobileDevice crash logs under ~/Library/Logs/CrashReporter/MobileDevice."
+            case .archives:
+                return "Archives under ~/Library/Developer/Xcode/Archives."
+            case .deviceSupport:
+                return "Physical device support directories under ~/Library/Developer/Xcode/iOS DeviceSupport."
+            case .simulatorData:
+                return "CoreSimulator device data, runtime bundles, and simulator caches."
+            }
+        }
+    }
+
     static func simulatorRuntimeStaleReasonsByIdentifier(
         in snapshot: XcodeInventorySnapshot
     ) -> [String: [SimulatorRuntimeStaleReason]] {
