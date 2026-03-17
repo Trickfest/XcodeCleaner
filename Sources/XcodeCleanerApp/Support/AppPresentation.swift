@@ -72,8 +72,8 @@ enum AppPresentation {
         ]
     }
 
-    static func totalFootprintIncludedItems(for categories: [StorageCategoryUsage]) -> [String] {
-        categories.map { category in
+    static func totalFootprintIncludedItems(for storage: XcodeStorageUsage) -> [String] {
+        let categoryItems = storage.categories.map { category in
             switch category.kind {
             case .xcodeApplications:
                 return "Xcode application bundles discovered in standard install locations."
@@ -88,6 +88,35 @@ enum AppPresentation {
             case .simulatorData:
                 return "CoreSimulator device data, runtime bundles, and simulator caches."
             }
+        }
+        let countedOnlyItems = storage.countedOnlyComponents.map { component in
+            switch component.kind {
+            case .documentationCache:
+                return "Documentation cache under ~/Library/Developer/Xcode/DocumentationCache. (counted only)"
+            case .developerPackages:
+                return "Developer packages under ~/Library/Developer/Packages. (counted only)"
+            case .dvtDownloads:
+                return "Developer tool downloads under ~/Library/Developer/DVTDownloads. (counted only)"
+            case .xcpgDevices:
+                return "Xcode Playground/CoreSimulator device-set state under ~/Library/Developer/XCPGDevices. (counted only)"
+            case .xcTestDevices:
+                return "XCTest device-set state under ~/Library/Developer/XCTestDevices. (counted only)"
+            case .additionalXcodeState:
+                return "Additional standard Xcode-managed state under ~/Library/Developer/Xcode, such as UserData, DocumentationIndex, and Xcode mapping files. (counted only)"
+            }
+        }
+        return categoryItems + countedOnlyItems
+    }
+
+    static var countedOnlyFootprintComponentNote: String {
+        "Counted only in total footprint; not a normal cleanup target in this build."
+    }
+
+    static func visibleCountedOnlyFootprintComponents(
+        in storage: XcodeStorageUsage
+    ) -> [CountedFootprintComponentUsage] {
+        storage.countedOnlyComponents.filter { component in
+            component.bytes > 0 || !component.paths.isEmpty
         }
     }
 

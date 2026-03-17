@@ -19,10 +19,11 @@ Last updated: 2026-03-16
 - [x] Migrate cleanup of known simulator devices from direct filesystem deletion to `simctl` so registered CoreSimulator objects are removed through Apple-supported commands.
 - [x] Improve physical `iOS DeviceSupport` inventory metadata for both legacy version-first and newer model-prefixed directory names, using folder parsing plus `Info.plist` fallback where helpful, and leave cleanup decisions to the user instead of stale-device heuristics.
 - [x] Decide and document the intended meaning of `Total Xcode Footprint` in the README and in-app help: all standard Xcode/CoreSimulator-managed storage on this Mac, even when some counted roots are not normal cleanup candidates.
-- [ ] Expand footprint accounting to include additional major Xcode-managed storage that is currently omitted, starting with `~/Library/Developer/Xcode/DocumentationCache`.
+- [x] Expand footprint accounting to include additional major Xcode-managed storage that is currently omitted, starting with `~/Library/Developer/Xcode/DocumentationCache`.
 - [x] Add an in-app info popover next to `Total Xcode Footprint` that lists the roots currently included in the calculation and makes it explicit that counted roots are not automatically cleanup targets.
-- [ ] Count standard Xcode-managed support content such as `~/Library/Developer/Packages` in `Total Xcode Footprint`, then research whether each root should remain count-only or become an explicit cleanup candidate.
-- [ ] Keep external preference and saved-state locations out of the normal footprint total for now, but allow small standard Xcode-managed roots under `~/Library/Developer/Xcode` to roll into count-only footprint state where appropriate.
+- [x] Count standard Xcode-managed support content such as `~/Library/Developer/Packages`, `~/Library/Developer/DVTDownloads`, and `~/Library/Developer/XCTestDevices` in `Total Xcode Footprint`, while leaving cleanup-candidate research for later.
+- [x] Revisit whether `~/Library/Developer/XCPGDevices` should count toward `Total Xcode Footprint`, since it appears to be Playground-related developer state and may not belong under an Xcode-only footprint definition.
+- [x] Keep external preference and saved-state locations out of the normal footprint total for now, but allow small standard Xcode-managed roots under `~/Library/Developer/Xcode` to roll into count-only footprint state where appropriate.
 - [ ] Audit standard Xcode result/log storage roots, include them in `Total Xcode Footprint` where materially relevant, and add explicit cleanup support for them after `DocumentationCache`.
 - [ ] After `DocumentationCache`, add explicit cleanup support for standard Xcode result/log storage that is safe to remove, without making it part of the default-safe cleanup set.
 - [ ] Add tests that cover modern simulator runtime layouts, especially volume-backed runtime locations under `/Library/Developer/CoreSimulator/Volumes/...`.

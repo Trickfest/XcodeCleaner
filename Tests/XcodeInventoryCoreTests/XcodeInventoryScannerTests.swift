@@ -170,6 +170,7 @@ struct XcodeInventoryScannerTests {
         #expect(snapshot.installs.first?.safetyClassification == .destructive)
         #expect(snapshot.storage.totalBytes == 6_440)
         #expect(snapshot.storage.categories.count == 6)
+        #expect(snapshot.storage.countedOnlyComponents.count == 6)
         #expect(snapshot.storage.categories[0].kind == .xcodeApplications)
         #expect(snapshot.storage.categories[0].bytes == 3_000)
         #expect(snapshot.storage.categories[0].safetyClassification == .destructive)
@@ -201,6 +202,93 @@ struct XcodeInventoryScannerTests {
         #expect(snapshot.simulator.devices[0].runningInstanceCount == 1)
         #expect(snapshot.simulator.devices[0].safetyClassification == .conditionallySafe)
         #expect(snapshot.simulator.devices[1].runningInstanceCount == 0)
+        #expect(snapshot.storage.countedOnlyComponents.allSatisfy { $0.bytes == 0 })
+    }
+
+    @Test("Scanner counts additional footprint components without expanding cleanup categories")
+    func scannerCountsAdditionalFootprintComponentsSeparately() throws {
+        let sandbox = try TemporaryDirectory.make()
+        defer { sandbox.cleanup() }
+
+        let fakeHome = sandbox.url.appendingPathComponent("fake-home", isDirectory: true)
+        let derivedDataPath = fakeHome
+            .appendingPathComponent("Library/Developer/Xcode/DerivedData", isDirectory: true)
+            .path
+        let archivesPath = fakeHome
+            .appendingPathComponent("Library/Developer/Xcode/Archives", isDirectory: true)
+            .path
+        let deviceSupportPath = fakeHome
+            .appendingPathComponent("Library/Developer/Xcode/iOS DeviceSupport", isDirectory: true)
+            .path
+        let documentationCachePath = fakeHome
+            .appendingPathComponent("Library/Developer/Xcode/DocumentationCache", isDirectory: true)
+            .path
+        let packagesPath = fakeHome
+            .appendingPathComponent("Library/Developer/Packages", isDirectory: true)
+            .path
+        let dvtDownloadsPath = fakeHome
+            .appendingPathComponent("Library/Developer/DVTDownloads", isDirectory: true)
+            .path
+        let xcpgDevicesPath = fakeHome
+            .appendingPathComponent("Library/Developer/XCPGDevices", isDirectory: true)
+            .path
+        let xcTestDevicesPath = fakeHome
+            .appendingPathComponent("Library/Developer/XCTestDevices", isDirectory: true)
+            .path
+        let userDataPath = fakeHome
+            .appendingPathComponent("Library/Developer/Xcode/UserData", isDirectory: true)
+            .path
+        let documentationIndexPath = fakeHome
+            .appendingPathComponent("Library/Developer/Xcode/DocumentationIndex", isDirectory: true)
+            .path
+        let sdkMappingPath = fakeHome
+            .appendingPathComponent("Library/Developer/Xcode/SDKToSimulatorIndexMapping.plist", isDirectory: false)
+            .path
+        let metalMappingPath = fakeHome
+            .appendingPathComponent("Library/Developer/Xcode/XcodeToMetalToolchainIndexMapping.plist", isDirectory: false)
+            .path
+
+        let scanner = XcodeInventoryScanner(
+            applicationDiscoverer: StubDiscoverer(urls: []),
+            activeDeveloperDirectoryProvider: StubActiveDeveloperProvider(url: nil),
+            pathSizer: StubPathSizer(sizeByPath: [
+                derivedDataPath: 100,
+                archivesPath: 200,
+                deviceSupportPath: 300,
+                documentationCachePath: 500,
+                packagesPath: 600,
+                dvtDownloadsPath: 0,
+                xcpgDevicesPath: 0,
+                xcTestDevicesPath: 0,
+                userDataPath: 50,
+                documentationIndexPath: 10,
+                sdkMappingPath: 4,
+                metalMappingPath: 2,
+            ]),
+            homeDirectoryProvider: StubHomeDirectoryProvider(url: fakeHome),
+            runningApplicationsProvider: StubRunningApplicationsProvider(records: []),
+            simulatorListingProvider: StubSimulatorListingProvider(
+                listing: SimulatorListing(devices: [], runtimes: [])
+            ),
+            now: { Date(timeIntervalSince1970: 300) }
+        )
+
+        let snapshot = scanner.scan()
+
+        #expect(snapshot.storage.categories.count == 6)
+        #expect(snapshot.storage.categories.contains(where: { $0.title == "Documentation Cache" }) == false)
+        #expect(snapshot.storage.categories.contains(where: { $0.title == "Developer Packages" }) == false)
+        #expect(snapshot.storage.totalBytes == 1_766)
+        #expect(snapshot.storage.countedOnlyComponents.count == 6)
+        #expect(countedComponentBytes(for: .documentationCache, in: snapshot) == 500)
+        #expect(countedComponentBytes(for: .developerPackages, in: snapshot) == 600)
+        #expect(countedComponentBytes(for: .dvtDownloads, in: snapshot) == 0)
+        #expect(countedComponentBytes(for: .xcpgDevices, in: snapshot) == 0)
+        #expect(countedComponentBytes(for: .xcTestDevices, in: snapshot) == 0)
+        #expect(countedComponentBytes(for: .additionalXcodeState, in: snapshot) == 66)
+        #expect(countedComponentPaths(for: .dvtDownloads, in: snapshot) == [dvtDownloadsPath])
+        #expect(countedComponentPaths(for: .xcpgDevices, in: snapshot) == [xcpgDevicesPath])
+        #expect(countedComponentPaths(for: .xcTestDevices, in: snapshot) == [xcTestDevicesPath])
     }
 
     @Test("Scanner sizes Simulator Data from explicit device and runtime paths plus cache roots")
@@ -735,6 +823,20 @@ private func writePropertyList(_ dictionary: [String: Any], to url: URL) throws 
 
 private func bytes(for kind: StorageCategoryKind, in snapshot: XcodeInventorySnapshot) -> Int64 {
     snapshot.storage.categories.first(where: { $0.kind == kind })?.bytes ?? -1
+}
+
+private func countedComponentBytes(
+    for kind: CountedFootprintComponentKind,
+    in snapshot: XcodeInventorySnapshot
+) -> Int64 {
+    snapshot.storage.countedOnlyComponents.first(where: { $0.kind == kind })?.bytes ?? -1
+}
+
+private func countedComponentPaths(
+    for kind: CountedFootprintComponentKind,
+    in snapshot: XcodeInventorySnapshot
+) -> [String] {
+    snapshot.storage.countedOnlyComponents.first(where: { $0.kind == kind })?.paths ?? []
 }
 
 private func deduplicatedPhases(_ phases: [ScanPhase]) -> [ScanPhase] {

@@ -307,11 +307,78 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
             return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
         }
 
+        let countedOnlyComponents = buildCountedOnlyFootprintComponents(homeDirectoryURL: homeDirectoryURL)
+
         let totalBytes = categories.reduce(Int64(0)) { partialResult, category in
             partialResult + category.bytes
         }
+        + countedOnlyComponents.reduce(Int64(0)) { partialResult, component in
+            partialResult + component.bytes
+        }
 
-        return XcodeStorageUsage(categories: categories, totalBytes: totalBytes)
+        return XcodeStorageUsage(
+            categories: categories,
+            countedOnlyComponents: countedOnlyComponents,
+            totalBytes: totalBytes
+        )
+    }
+
+    private func buildCountedOnlyFootprintComponents(
+        homeDirectoryURL: URL
+    ) -> [CountedFootprintComponentUsage] {
+        let developerRoot = homeDirectoryURL.appendingPathComponent("Library/Developer", isDirectory: true)
+        let xcodeRoot = developerRoot.appendingPathComponent("Xcode", isDirectory: true)
+
+        let components = [
+            makeFootprintComponent(
+                kind: .documentationCache,
+                title: "Documentation Cache",
+                paths: [xcodeRoot.appendingPathComponent("DocumentationCache", isDirectory: true)],
+                ownershipSummary: "Counted in total footprint only; owned by downloaded Xcode documentation caches."
+            ),
+            makeFootprintComponent(
+                kind: .developerPackages,
+                title: "Developer Packages",
+                paths: [developerRoot.appendingPathComponent("Packages", isDirectory: true)],
+                ownershipSummary: "Counted in total footprint only; owned by Apple developer support packages downloaded for Xcode."
+            ),
+            makeFootprintComponent(
+                kind: .dvtDownloads,
+                title: "DVTDownloads",
+                paths: [developerRoot.appendingPathComponent("DVTDownloads", isDirectory: true)],
+                ownershipSummary: "Counted in total footprint only; owned by downloaded Xcode developer tool assets and components."
+            ),
+            makeFootprintComponent(
+                kind: .xcpgDevices,
+                title: "XCPG Devices",
+                paths: [developerRoot.appendingPathComponent("XCPGDevices", isDirectory: true)],
+                ownershipSummary: "Counted in total footprint only; owned by Xcode-managed Playground/CoreSimulator device-set state."
+            ),
+            makeFootprintComponent(
+                kind: .xcTestDevices,
+                title: "XCTest Devices",
+                paths: [developerRoot.appendingPathComponent("XCTestDevices", isDirectory: true)],
+                ownershipSummary: "Counted in total footprint only; owned by XCTest device-set state used by Xcode tooling."
+            ),
+            makeFootprintComponent(
+                kind: .additionalXcodeState,
+                title: "Additional Xcode State",
+                paths: [
+                    xcodeRoot.appendingPathComponent("UserData", isDirectory: true),
+                    xcodeRoot.appendingPathComponent("DocumentationIndex", isDirectory: true),
+                    xcodeRoot.appendingPathComponent("SDKToSimulatorIndexMapping.plist", isDirectory: false),
+                    xcodeRoot.appendingPathComponent("XcodeToMetalToolchainIndexMapping.plist", isDirectory: false),
+                ],
+                ownershipSummary: "Counted in total footprint only; owned by smaller Xcode-managed state under ~/Library/Developer/Xcode."
+            ),
+        ]
+
+        return components.sorted { lhs, rhs in
+            if lhs.bytes != rhs.bytes {
+                return lhs.bytes > rhs.bytes
+            }
+            return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+        }
     }
 
     private func simulatorStoragePaths(
@@ -552,6 +619,37 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
             paths: existingPaths,
             ownershipSummary: ownershipSummary,
             safetyClassification: safetyClassification
+        )
+    }
+
+    private func makeFootprintComponent(
+        kind: CountedFootprintComponentKind,
+        title: String,
+        paths: [URL],
+        ownershipSummary: String
+    ) -> CountedFootprintComponentUsage {
+        var seen = Set<String>()
+        var existingPaths: [String] = []
+        var bytes = Int64(0)
+
+        for pathURL in paths {
+            let normalized = normalizedPath(for: pathURL) ?? pathURL.path
+            guard seen.insert(normalized).inserted else {
+                continue
+            }
+            guard pathSizer.fileExists(at: pathURL) else {
+                continue
+            }
+            existingPaths.append(normalized)
+            bytes += pathSizer.allocatedSize(at: pathURL)
+        }
+
+        return CountedFootprintComponentUsage(
+            kind: kind,
+            title: title,
+            bytes: bytes,
+            paths: existingPaths,
+            ownershipSummary: ownershipSummary
         )
     }
 

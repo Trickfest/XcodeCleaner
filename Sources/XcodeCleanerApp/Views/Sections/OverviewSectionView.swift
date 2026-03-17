@@ -55,7 +55,9 @@ struct OverviewSectionView: View {
     }
 
     private var storageOverviewView: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let countedOnlyComponents = AppPresentation.visibleCountedOnlyFootprintComponents(in: snapshot.storage)
+
+        return VStack(alignment: .leading, spacing: 10) {
             Text("Storage Overview")
                 .font(.headline)
             HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -100,6 +102,45 @@ struct OverviewSectionView: View {
                 .padding(10)
                 .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
             }
+
+            if !countedOnlyComponents.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Additional Counted Xcode State")
+                        .font(.subheadline.weight(.semibold))
+                    Text("These components contribute to Total Xcode Footprint but are not normal cleanup targets in this build.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    ForEach(countedOnlyComponents) { component in
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(component.title)
+                                Spacer()
+                                Text(AppPresentation.formatBytes(component.bytes))
+                                    .font(.callout.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
+                            .font(.callout.weight(.medium))
+
+                            if !component.paths.isEmpty {
+                                Text(component.paths.joined(separator: "\n"))
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                            }
+
+                            Text("Ownership: \(component.ownershipSummary)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(AppPresentation.countedOnlyFootprintComponentNote)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(10)
+                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                    }
+                }
+            }
         }
     }
 
@@ -115,7 +156,7 @@ struct OverviewSectionView: View {
                 Text("Currently counted in this build")
                     .font(.subheadline.weight(.semibold))
                 ForEach(
-                    Array(AppPresentation.totalFootprintIncludedItems(for: snapshot.storage.categories).enumerated()),
+                    Array(AppPresentation.totalFootprintIncludedItems(for: snapshot.storage).enumerated()),
                     id: \.offset
                 ) { _, item in
                     Text("• \(item)")

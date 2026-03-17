@@ -125,6 +125,39 @@ public struct StorageCategoryUsage: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
+public enum CountedFootprintComponentKind: String, Codable, CaseIterable, Sendable {
+    case documentationCache
+    case developerPackages
+    case dvtDownloads
+    case xcpgDevices
+    case xcTestDevices
+    case additionalXcodeState
+}
+
+public struct CountedFootprintComponentUsage: Codable, Equatable, Identifiable, Sendable {
+    public var id: CountedFootprintComponentKind { kind }
+
+    public let kind: CountedFootprintComponentKind
+    public let title: String
+    public let bytes: Int64
+    public let paths: [String]
+    public let ownershipSummary: String
+
+    public init(
+        kind: CountedFootprintComponentKind,
+        title: String,
+        bytes: Int64,
+        paths: [String],
+        ownershipSummary: String
+    ) {
+        self.kind = kind
+        self.title = title
+        self.bytes = bytes
+        self.paths = paths
+        self.ownershipSummary = ownershipSummary
+    }
+}
+
 public struct PhysicalDeviceSupportDirectoryRecord: Codable, Equatable, Identifiable, Sendable {
     public var id: String { path }
 
@@ -252,11 +285,39 @@ public struct RuntimeTelemetry: Codable, Equatable, Sendable {
 
 public struct XcodeStorageUsage: Codable, Equatable, Sendable {
     public let categories: [StorageCategoryUsage]
+    public let countedOnlyComponents: [CountedFootprintComponentUsage]
     public let totalBytes: Int64
 
-    public init(categories: [StorageCategoryUsage], totalBytes: Int64) {
+    public init(
+        categories: [StorageCategoryUsage],
+        countedOnlyComponents: [CountedFootprintComponentUsage] = [],
+        totalBytes: Int64
+    ) {
         self.categories = categories
+        self.countedOnlyComponents = countedOnlyComponents
         self.totalBytes = totalBytes
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case categories
+        case countedOnlyComponents
+        case totalBytes
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            categories: try container.decode([StorageCategoryUsage].self, forKey: .categories),
+            countedOnlyComponents: try container.decodeIfPresent([CountedFootprintComponentUsage].self, forKey: .countedOnlyComponents) ?? [],
+            totalBytes: try container.decode(Int64.self, forKey: .totalBytes)
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(categories, forKey: .categories)
+        try container.encode(countedOnlyComponents, forKey: .countedOnlyComponents)
+        try container.encode(totalBytes, forKey: .totalBytes)
     }
 }
 
