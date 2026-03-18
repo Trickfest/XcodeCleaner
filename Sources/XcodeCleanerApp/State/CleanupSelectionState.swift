@@ -14,7 +14,7 @@ struct CleanupSelectionState {
     func selection(for snapshot: XcodeInventorySnapshot) -> DryRunSelection {
         let availableCountedComponentKinds = Set(
             snapshot.storage.countedOnlyComponents
-                .filter { CountedFootprintComponentKind.explicitOptInCleanupKinds.contains($0.kind) && !$0.paths.isEmpty }
+                .filter { CleanupPolicies.policy(for: $0.kind).surface == .explicitOptIn && !$0.paths.isEmpty }
                 .map(\.kind)
         )
         let availableDeviceUDIDs = Set(snapshot.simulator.devices.map(\.udid))

@@ -578,7 +578,17 @@ func terminalWidth(fileDescriptor: Int32, environment: [String: String]) -> Int?
 
 func printUsage(toStandardError: Bool = false) {
     let categoryValues = StorageCategoryKind.allCases.map(\.rawValue).joined(separator: ", ")
-    let countedComponentValues = CountedFootprintComponentKind.explicitOptInCleanupKinds.map(\.rawValue).joined(separator: ", ")
+    let countedComponentValues = CleanupPolicies.explicitOptInCountedFootprintComponentKinds.map(\.rawValue).joined(separator: ", ")
+    let categorySemantics = StorageCategoryKind.allCases.map { kind in
+        let policy = CleanupPolicies.policy(for: kind)
+        return "  - \(kind.rawValue): \(policy.cleanupDescription) Affects: \(policy.affectedRootsSummary)."
+    }
+    .joined(separator: "\n")
+    let countedComponentSemantics = CleanupPolicies.explicitOptInCountedFootprintComponentKinds.map { kind in
+        let policy = CleanupPolicies.policy(for: kind)
+        return "  - \(kind.rawValue): \(policy.cleanupDescription) Affects: \(policy.affectedRootsSummary)."
+    }
+    .joined(separator: "\n")
     let usage = """
     Usage: xcodecleaner-cli [--no-progress] [--help] [--dry-run|--execute [--allow-direct-delete] [--skip-if-tools-running] [--plan-category <kind> ...] [--plan-counted-component <kind> ...] [--plan-simulator-device <udid> ...] [--plan-xcode-install <path> ...]]
                            [--list-stale-artifacts]
@@ -616,15 +626,10 @@ func printUsage(toStandardError: Bool = false) {
       \(countedComponentValues)
 
     Category semantics:
-      - xcodeApplications: Aggregate delete of selected Xcode app bundle paths.
-      - derivedData: Build products and indexes under ~/Library/Developer/Xcode/DerivedData.
-      - mobileDeviceCrashLogs: Crash/log capture folders under ~/Library/Logs/CrashReporter/MobileDevice.
-      - archives: Archived app builds under ~/Library/Developer/Xcode/Archives.
-      - deviceSupport: Aggregate delete of all physical-device support directories under ~/Library/Developer/Xcode/iOS DeviceSupport.
-      - simulatorData: Aggregate delete of CoreSimulator devices/caches/runtimes roots. Known registered devices and runtimes are removed via simctl when possible.
-      - documentationCache: Explicit opt-in cleanup of ~/Library/Developer/Xcode/DocumentationCache.
-      - xcodeLogs: Explicit opt-in cleanup of ~/Library/Logs/Xcode.
-      - coreSimulatorLogs: Explicit opt-in cleanup of ~/Library/Logs/CoreSimulator.
+    \(categorySemantics)
+
+    Opt-in component semantics:
+    \(countedComponentSemantics)
     """
     if toStandardError {
         writeToStandardError("\(usage)\n")

@@ -2,10 +2,7 @@ import Foundation
 import SwiftUI
 import XcodeInventoryCore
 
-let guiDefaultCleanupCategoryKinds: [StorageCategoryKind] = [
-    .derivedData,
-    .archives,
-]
+let guiDefaultCleanupCategoryKinds: [StorageCategoryKind] = CleanupPolicies.defaultGUICategoryKinds
 
 func defaultAutomationStateDirectory() -> URL {
     URL(filePath: NSHomeDirectory(), directoryHint: .isDirectory)
@@ -24,37 +21,15 @@ enum AppPresentation {
     }
 
     static func title(for kind: StorageCategoryKind) -> String {
-        switch kind {
-        case .xcodeApplications:
-            return "Xcode Applications"
-        case .derivedData:
-            return "Derived Data"
-        case .mobileDeviceCrashLogs:
-            return "MobileDevice Crash Logs"
-        case .archives:
-            return "Archives"
-        case .deviceSupport:
-            return "Device Support"
-        case .simulatorData:
-            return "Simulator Data"
-        }
+        CleanupPolicies.policy(for: kind).title
     }
 
     static func cleanupCategoryHelpText(for kind: StorageCategoryKind) -> String {
-        switch kind {
-        case .xcodeApplications:
-            return "Xcode app bundles"
-        case .derivedData:
-            return "Build products and indexes"
-        case .mobileDeviceCrashLogs:
-            return "Crash/log history from connected physical devices"
-        case .archives:
-            return "Archived app builds"
-        case .deviceSupport:
-            return "All physical device support folders (CLI aggregate mode)"
-        case .simulatorData:
-            return "CoreSimulator devices/caches/runtimes"
-        }
+        CleanupPolicies.policy(for: kind).cleanupDescription
+    }
+
+    static func cleanupCategoryAffectedRootsText(for kind: StorageCategoryKind) -> String {
+        "Affects: \(CleanupPolicies.policy(for: kind).affectedRootsSummary)"
     }
 
     static var totalFootprintDefinition: String {
@@ -73,40 +48,20 @@ enum AppPresentation {
     }
 
     static func totalFootprintIncludedItems(for storage: XcodeStorageUsage) -> [String] {
-        let categoryItems = storage.categories.map { category in
-            switch category.kind {
-            case .xcodeApplications:
-                return "Xcode application bundles discovered in standard install locations."
-            case .derivedData:
-                return "Derived Data under ~/Library/Developer/Xcode/DerivedData."
-            case .mobileDeviceCrashLogs:
-                return "MobileDevice crash logs under ~/Library/Logs/CrashReporter/MobileDevice."
-            case .archives:
-                return "Archives under ~/Library/Developer/Xcode/Archives."
-            case .deviceSupport:
-                return "Physical device support directories under ~/Library/Developer/Xcode/iOS DeviceSupport."
-            case .simulatorData:
-                return "CoreSimulator device data, runtime bundles, and simulator caches."
-            }
+        let categoryItems: [String] = storage.categories.compactMap { category in
+            CleanupPolicies.policy(for: category.kind).footprintDescription
         }
-        let countedOnlyItems = storage.countedOnlyComponents.map { component in
-            switch component.kind {
-            case .documentationCache:
-                return "Documentation cache under ~/Library/Developer/Xcode/DocumentationCache. (explicit opt-in cleanup)"
-            case .developerPackages:
-                return "Developer packages under ~/Library/Developer/Packages. (counted only)"
-            case .xcodeLogs:
-                return "Xcode logs under ~/Library/Logs/Xcode. (explicit opt-in cleanup)"
-            case .coreSimulatorLogs:
-                return "CoreSimulator logs under ~/Library/Logs/CoreSimulator. (explicit opt-in cleanup)"
-            case .dvtDownloads:
-                return "Developer tool downloads under ~/Library/Developer/DVTDownloads. (counted only)"
-            case .xcpgDevices:
-                return "Xcode Playground/CoreSimulator device-set state under ~/Library/Developer/XCPGDevices. (counted only)"
-            case .xcTestDevices:
-                return "XCTest device-set state under ~/Library/Developer/XCTestDevices. (counted only)"
-            case .additionalXcodeState:
-                return "Additional standard Xcode-managed state under ~/Library/Developer/Xcode, such as UserData, DocumentationIndex, and Xcode mapping files. (counted only)"
+        let countedOnlyItems: [String] = storage.countedOnlyComponents.compactMap { component -> String? in
+            guard let baseDescription = CleanupPolicies.policy(for: component.kind).footprintDescription else {
+                return nil
+            }
+            switch CleanupPolicies.policy(for: component.kind).surface {
+            case .explicitOptIn:
+                return "\(baseDescription) (explicit opt-in cleanup)"
+            case .countedOnly:
+                return "\(baseDescription) (counted only)"
+            default:
+                return baseDescription
             }
         }
         return categoryItems + countedOnlyItems
@@ -119,7 +74,7 @@ enum AppPresentation {
     static func additionalFootprintComponentNote(
         for kind: CountedFootprintComponentKind
     ) -> String {
-        if CountedFootprintComponentKind.explicitOptInCleanupKinds.contains(kind) {
+        if CleanupPolicies.policy(for: kind).surface == .explicitOptIn {
             return "Available as explicit opt-in cleanup; not part of the default-safe cleanup set."
         }
         return countedOnlyFootprintComponentNote
@@ -137,7 +92,7 @@ enum AppPresentation {
         in storage: XcodeStorageUsage
     ) -> [CountedFootprintComponentUsage] {
         storage.countedOnlyComponents.filter { component in
-            CountedFootprintComponentKind.explicitOptInCleanupKinds.contains(component.kind)
+            CleanupPolicies.policy(for: component.kind).surface == .explicitOptIn
                 && !component.paths.isEmpty
         }
     }
@@ -145,16 +100,13 @@ enum AppPresentation {
     static func cleanupFootprintComponentHelpText(
         for kind: CountedFootprintComponentKind
     ) -> String {
-        switch kind {
-        case .documentationCache:
-            return "Downloaded Xcode documentation cache under ~/Library/Developer/Xcode/DocumentationCache. Explicit opt-in only."
-        case .xcodeLogs:
-            return "Xcode log and result history under ~/Library/Logs/Xcode. Explicit opt-in only."
-        case .coreSimulatorLogs:
-            return "CoreSimulator log history under ~/Library/Logs/CoreSimulator. Explicit opt-in only."
-        case .developerPackages, .dvtDownloads, .xcpgDevices, .xcTestDevices, .additionalXcodeState:
-            return "Not a cleanup target in this build."
-        }
+        CleanupPolicies.policy(for: kind).cleanupDescription
+    }
+
+    static func cleanupFootprintComponentAffectedRootsText(
+        for kind: CountedFootprintComponentKind
+    ) -> String {
+        "Affects: \(CleanupPolicies.policy(for: kind).affectedRootsSummary)"
     }
 
     static func simulatorRuntimeStaleReasonsByIdentifier(
@@ -256,7 +208,7 @@ enum AppPresentation {
     }
 
     static func staleArtifactIsReportOnly(_ kind: StaleArtifactKind) -> Bool {
-        kind == .orphanedSimulatorRuntime
+        CleanupPolicies.policy(for: kind).surface == .reportOnly
     }
 
     static func staleArtifactActionHint(for kind: StaleArtifactKind) -> String? {

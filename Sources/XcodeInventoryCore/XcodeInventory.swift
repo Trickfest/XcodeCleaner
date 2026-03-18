@@ -135,11 +135,9 @@ public enum CountedFootprintComponentKind: String, Codable, CaseIterable, Sendab
     case xcTestDevices
     case additionalXcodeState
 
-    public static let explicitOptInCleanupKinds: [CountedFootprintComponentKind] = [
-        .documentationCache,
-        .xcodeLogs,
-        .coreSimulatorLogs,
-    ]
+    public static var explicitOptInCleanupKinds: [CountedFootprintComponentKind] {
+        CleanupPolicies.explicitOptInCountedFootprintComponentKinds
+    }
 }
 
 public struct CountedFootprintComponentUsage: Codable, Equatable, Identifiable, Sendable {
@@ -422,7 +420,7 @@ public struct DryRunSelection: Codable, Equatable, Sendable {
     }
 
     public static let safeCategoryDefaults = DryRunSelection(
-        selectedCategoryKinds: [.derivedData, .archives, .deviceSupport],
+        selectedCategoryKinds: CleanupPolicies.defaultPlanningCategoryKinds,
         selectedSimulatorDeviceUDIDs: [],
         selectedSimulatorRuntimeIdentifiers: [],
         selectedPhysicalDeviceSupportDirectoryPaths: [],

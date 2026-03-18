@@ -224,19 +224,23 @@ struct CleanupSectionView: View {
 
             Text("Categories")
                 .font(.callout.weight(.medium))
-            Text("Xcode app uninstall and physical device support directory cleanup are managed in the itemized sections below.")
+            Text("Choose the broad cleanup areas you want to include. Xcode app removal and physical device support directories are handled in the itemized sections below.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             ForEach(snapshot.storage.categories.filter { category in
                 category.kind != .xcodeApplications && category.kind != .deviceSupport
             }) { category in
                 Toggle(isOn: categoryBinding(for: category.kind)) {
-                    HStack {
-                        Text(category.title)
-                        Text(AppPresentation.cleanupCategoryHelpText(for: category.kind))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(category.title)
+                            Text(AppPresentation.cleanupCategoryHelpText(for: category.kind))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(AppPresentation.cleanupCategoryAffectedRootsText(for: category.kind))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                         Spacer()
                         Text(AppPresentation.formatBytes(category.bytes))
                             .font(.callout.monospacedDigit())
@@ -248,7 +252,7 @@ struct CleanupSectionView: View {
             if !cleanupEligibleFootprintComponents.isEmpty {
                 Text("Explicit Opt-In Cleanup")
                     .font(.callout.weight(.medium))
-                Text("These additional footprint components are safe enough to offer as manual cleanup targets, but they are not part of the default-safe cleanup set.")
+                Text("These cleanup options are available on purpose, but they are not included in the default-safe selection.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -258,6 +262,9 @@ struct CleanupSectionView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(component.title)
                                 Text(AppPresentation.cleanupFootprintComponentHelpText(for: component.kind))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Text(AppPresentation.cleanupFootprintComponentAffectedRootsText(for: component.kind))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                 if !component.paths.isEmpty {
