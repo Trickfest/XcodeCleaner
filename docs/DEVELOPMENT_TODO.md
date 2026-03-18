@@ -26,15 +26,11 @@ Last updated: 2026-03-17
 - [x] Keep external preference and saved-state locations out of the normal footprint total for now, but allow small standard Xcode-managed roots under `~/Library/Developer/Xcode` to roll into count-only footprint state where appropriate.
 - [x] Audit standard Xcode result/log storage roots and include the relevant ones in `Total Xcode Footprint`.
 - [x] Add explicit opt-in cleanup support for standard Xcode result/log storage that is safe to remove, without making it part of the default-safe cleanup set.
-- [ ] Add tests that cover modern simulator runtime layouts, especially volume-backed runtime locations under `/Library/Developer/CoreSimulator/Volumes/...`.
-- [ ] Add tests that verify aggregate totals match the union of tracked major storage roots and do not undercount when runtime bundle paths live outside the old hardcoded path.
+- [x] Expand simulator-accounting regression tests to cover modern volume-backed CoreSimulator layouts and total-footprint invariants, including no undercounting and no double counting.
 - [x] Update UI labeling and README wording so the footprint number's scope is explicit and matches the implementation.
-- [ ] Expand cleanup scope in phases rather than all at once.
 - [ ] First cleanup expansion candidate: make `DocumentationCache` visible and optionally cleanable, but not part of the default safe cleanup set.
-- [ ] Classify new cleanup candidates by safety and recovery cost so the app distinguishes default-safe cleanup from explicit opt-in cleanup.
-- [ ] Preserve the current default-safe cleanup posture for ordinary use; broadening accounting should not automatically broaden default deletion.
-- [ ] Design a separate destructive full-removal workflow inside the app later, likely as an isolated destructive section within `Cleanup`, not as normal cleanup toggles.
-- [ ] When the full-removal workflow is built, include explicit scope groups, strong warnings, dry-run preview, and confirmation steps for personal state and remove-everything actions.
+- [ ] Define and apply cleanup-safety classification for new cleanup candidates, keeping the default-safe set narrow and using explicit opt-in for higher-cost cleanup.
+- [ ] Design the destructive Full Xcode Removal workflow as an isolated Cleanup section with scope groups, dry-run preview, and strong confirmation for personal-state/delete-everything actions.
 
 ## Next Milestones
 
