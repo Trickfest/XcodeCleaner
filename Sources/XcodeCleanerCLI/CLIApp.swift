@@ -31,6 +31,7 @@ struct XcodeCleanerCLIApp {
             if options.mode == .dryRun || options.mode == .execute {
                 let selection = DryRunSelection(
                     selectedCategoryKinds: options.selectedCategoryKinds,
+                    selectedCountedFootprintComponentKinds: options.selectedCountedFootprintComponentKinds,
                     selectedSimulatorDeviceUDIDs: options.selectedSimulatorDeviceUDIDs,
                     selectedXcodeInstallPaths: options.selectedXcodeInstallPaths
                 )
@@ -577,8 +578,9 @@ func terminalWidth(fileDescriptor: Int32, environment: [String: String]) -> Int?
 
 func printUsage(toStandardError: Bool = false) {
     let categoryValues = StorageCategoryKind.allCases.map(\.rawValue).joined(separator: ", ")
+    let countedComponentValues = CountedFootprintComponentKind.explicitOptInCleanupKinds.map(\.rawValue).joined(separator: ", ")
     let usage = """
-    Usage: xcodecleaner-cli [--no-progress] [--help] [--dry-run|--execute [--allow-direct-delete] [--skip-if-tools-running] [--plan-category <kind> ...] [--plan-simulator-device <udid> ...] [--plan-xcode-install <path> ...]]
+    Usage: xcodecleaner-cli [--no-progress] [--help] [--dry-run|--execute [--allow-direct-delete] [--skip-if-tools-running] [--plan-category <kind> ...] [--plan-counted-component <kind> ...] [--plan-simulator-device <udid> ...] [--plan-xcode-install <path> ...]]
                            [--list-stale-artifacts]
                            [--clean-stale-artifacts [--stale-artifact <id> ...] [--allow-direct-delete] [--skip-if-tools-running]]
                            [--switch-active-xcode <path>]
@@ -594,6 +596,7 @@ func printUsage(toStandardError: Bool = false) {
       --allow-direct-delete          Allow direct delete fallback when move-to-trash fails (execute/clean-stale modes)
       --skip-if-tools-running        Skip execute/clean-stale when Xcode or the Simulator app is currently running
       --plan-category <kind>         Include storage category in dry-run plan
+      --plan-counted-component <kind> Include explicit opt-in counted footprint component in dry-run plan
       --plan-simulator-device <udid> Include simulator device (UDID) in dry-run plan
       --plan-xcode-install <path>    Include specific Xcode app bundle path in plan
       --help                         Show this help message
@@ -609,6 +612,9 @@ func printUsage(toStandardError: Bool = false) {
     Storage Categories:
       \(categoryValues)
 
+    Opt-in counted footprint components:
+      \(countedComponentValues)
+
     Category semantics:
       - xcodeApplications: Aggregate delete of selected Xcode app bundle paths.
       - derivedData: Build products and indexes under ~/Library/Developer/Xcode/DerivedData.
@@ -616,6 +622,8 @@ func printUsage(toStandardError: Bool = false) {
       - archives: Archived app builds under ~/Library/Developer/Xcode/Archives.
       - deviceSupport: Aggregate delete of all physical-device support directories under ~/Library/Developer/Xcode/iOS DeviceSupport.
       - simulatorData: Aggregate delete of CoreSimulator devices/caches/runtimes roots. Known registered devices and runtimes are removed via simctl when possible.
+      - xcodeLogs: Explicit opt-in cleanup of ~/Library/Logs/Xcode.
+      - coreSimulatorLogs: Explicit opt-in cleanup of ~/Library/Logs/CoreSimulator.
     """
     if toStandardError {
         writeToStandardError("\(usage)\n")

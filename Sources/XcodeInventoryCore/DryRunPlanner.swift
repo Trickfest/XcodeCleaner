@@ -8,12 +8,16 @@ public enum DryRunPlanner {
     ) -> DryRunPlan {
         var notes: [String] = []
         var selectedKinds = Set(selection.selectedCategoryKinds)
+        let cleanupEligibleComponentKinds = Set(CountedFootprintComponentKind.explicitOptInCleanupKinds)
+        let selectedCountedComponentKinds = Set(selection.selectedCountedFootprintComponentKinds)
         let selectedDeviceUDIDs = Set(selection.selectedSimulatorDeviceUDIDs)
         let selectedRuntimeIdentifiers = Set(selection.selectedSimulatorRuntimeIdentifiers)
         let selectedPhysicalDeviceSupportDirectoryPaths = Set(
             selection.selectedPhysicalDeviceSupportDirectoryPaths.map(normalize(path:))
         )
         let selectedInstallPaths = Set(selection.selectedXcodeInstallPaths.map(normalize(path:)))
+        let selectedEligibleCountedComponentKinds = selectedCountedComponentKinds.intersection(cleanupEligibleComponentKinds)
+        let unsupportedCountedComponentKinds = selectedCountedComponentKinds.subtracting(cleanupEligibleComponentKinds)
 
         // Prevent inaccurate double counting when users select both aggregate simulator data
         // and specific simulator devices in one plan.
@@ -29,6 +33,13 @@ public enum DryRunPlanner {
         if selectedKinds.contains(.deviceSupport), !selectedPhysicalDeviceSupportDirectoryPaths.isEmpty {
             selectedKinds.remove(.deviceSupport)
             notes.append("Removed aggregate Device Support category to avoid double counting with selected physical Device Support directories.")
+        }
+        if !unsupportedCountedComponentKinds.isEmpty {
+            let unsupportedValues = unsupportedCountedComponentKinds
+                .map(\.rawValue)
+                .sorted()
+                .joined(separator: ", ")
+            notes.append("Ignored unsupported opt-in cleanup component selection(s): \(unsupportedValues).")
         }
 
         var items: [DryRunPlanItem] = []
@@ -47,6 +58,32 @@ public enum DryRunPlanner {
                     paths: category.paths,
                     ownershipSummary: category.ownershipSummary,
                     safetyClassification: category.safetyClassification
+                )
+            )
+        }
+
+        let countedComponentsByKind = Dictionary(
+            uniqueKeysWithValues: snapshot.storage.countedOnlyComponents.map { ($0.kind, $0) }
+        )
+        for kind in selectedEligibleCountedComponentKinds.sorted(by: { $0.rawValue < $1.rawValue }) {
+            guard let component = countedComponentsByKind[kind] else {
+                notes.append("Selected opt-in cleanup component \(kind.rawValue) was not found in the current scan snapshot.")
+                continue
+            }
+            guard !component.paths.isEmpty else {
+                notes.append("Selected opt-in cleanup component \(kind.rawValue) has no existing paths in the current scan snapshot.")
+                continue
+            }
+
+            items.append(
+                DryRunPlanItem(
+                    kind: .countedFootprintComponent,
+                    countedFootprintComponentKind: kind,
+                    title: component.title,
+                    reclaimableBytes: component.bytes,
+                    paths: component.paths,
+                    ownershipSummary: component.ownershipSummary,
+                    safetyClassification: .conditionallySafe
                 )
             )
         }
@@ -162,6 +199,7 @@ public enum DryRunPlanner {
             generatedAt: now,
             selection: DryRunSelection(
                 selectedCategoryKinds: Array(selectedKinds).sorted { $0.rawValue < $1.rawValue },
+                selectedCountedFootprintComponentKinds: Array(selectedEligibleCountedComponentKinds).sorted { $0.rawValue < $1.rawValue },
                 selectedSimulatorDeviceUDIDs: selection.selectedSimulatorDeviceUDIDs,
                 selectedSimulatorRuntimeIdentifiers: Array(selectedRuntimeIdentifiers).sorted(),
                 selectedPhysicalDeviceSupportDirectoryPaths: Array(selectedPhysicalDeviceSupportDirectoryPaths).sorted(),

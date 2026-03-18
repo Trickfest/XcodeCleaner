@@ -96,9 +96,9 @@ enum AppPresentation {
             case .developerPackages:
                 return "Developer packages under ~/Library/Developer/Packages. (counted only)"
             case .xcodeLogs:
-                return "Xcode logs under ~/Library/Logs/Xcode. (counted only)"
+                return "Xcode logs under ~/Library/Logs/Xcode. (explicit opt-in cleanup)"
             case .coreSimulatorLogs:
-                return "CoreSimulator logs under ~/Library/Logs/CoreSimulator. (counted only)"
+                return "CoreSimulator logs under ~/Library/Logs/CoreSimulator. (explicit opt-in cleanup)"
             case .dvtDownloads:
                 return "Developer tool downloads under ~/Library/Developer/DVTDownloads. (counted only)"
             case .xcpgDevices:
@@ -116,11 +116,42 @@ enum AppPresentation {
         "Counted only in total footprint; not a normal cleanup target in this build."
     }
 
-    static func visibleCountedOnlyFootprintComponents(
+    static func additionalFootprintComponentNote(
+        for kind: CountedFootprintComponentKind
+    ) -> String {
+        if CountedFootprintComponentKind.explicitOptInCleanupKinds.contains(kind) {
+            return "Available as explicit opt-in cleanup; not part of the default-safe cleanup set."
+        }
+        return countedOnlyFootprintComponentNote
+    }
+
+    static func visibleAdditionalFootprintComponents(
         in storage: XcodeStorageUsage
     ) -> [CountedFootprintComponentUsage] {
         storage.countedOnlyComponents.filter { component in
             component.bytes > 0 || !component.paths.isEmpty
+        }
+    }
+
+    static func cleanupEligibleFootprintComponents(
+        in storage: XcodeStorageUsage
+    ) -> [CountedFootprintComponentUsage] {
+        storage.countedOnlyComponents.filter { component in
+            CountedFootprintComponentKind.explicitOptInCleanupKinds.contains(component.kind)
+                && !component.paths.isEmpty
+        }
+    }
+
+    static func cleanupFootprintComponentHelpText(
+        for kind: CountedFootprintComponentKind
+    ) -> String {
+        switch kind {
+        case .xcodeLogs:
+            return "Xcode log and result history under ~/Library/Logs/Xcode. Explicit opt-in only."
+        case .coreSimulatorLogs:
+            return "CoreSimulator log history under ~/Library/Logs/CoreSimulator. Explicit opt-in only."
+        case .documentationCache, .developerPackages, .dvtDownloads, .xcpgDevices, .xcTestDevices, .additionalXcodeState:
+            return "Not a cleanup target in this build."
         }
     }
 

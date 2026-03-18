@@ -55,7 +55,7 @@ struct OverviewSectionView: View {
     }
 
     private var storageOverviewView: some View {
-        let countedOnlyComponents = AppPresentation.visibleCountedOnlyFootprintComponents(in: snapshot.storage)
+        let additionalFootprintComponents = AppPresentation.visibleAdditionalFootprintComponents(in: snapshot.storage)
 
         return VStack(alignment: .leading, spacing: 10) {
             Text("Storage Overview")
@@ -103,15 +103,15 @@ struct OverviewSectionView: View {
                 .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
             }
 
-            if !countedOnlyComponents.isEmpty {
+            if !additionalFootprintComponents.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Additional Counted Xcode State")
+                    Text("Additional Xcode Footprint Components")
                         .font(.subheadline.weight(.semibold))
-                    Text("These components contribute to Total Xcode Footprint but are not normal cleanup targets in this build.")
+                    Text("These components contribute to Total Xcode Footprint. Some are explicit opt-in cleanup targets; others are counted only in this build.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
-                    ForEach(countedOnlyComponents) { component in
+                    ForEach(additionalFootprintComponents) { component in
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
                                 Text(component.title)
@@ -132,7 +132,7 @@ struct OverviewSectionView: View {
                             Text("Ownership: \(component.ownershipSummary)")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                            Text(AppPresentation.countedOnlyFootprintComponentNote)
+                            Text(AppPresentation.additionalFootprintComponentNote(for: component.kind))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }

@@ -142,6 +142,64 @@ struct CleanupExecutorTests {
         #expect(report.totalReclaimedBytes == 0)
     }
 
+    @Test("Cleanup executor supports explicit opt-in Xcode log cleanup")
+    func executorSupportsOptInXcodeLogCleanup() {
+        let snapshot = makeExecutionSnapshot(
+            runningXcodeInstances: 0,
+            runningSimulatorAppInstances: 0,
+            bootedDeviceState: "Shutdown",
+            bootedDeviceRunningInstances: 0
+        )
+        let selection = DryRunSelection(
+            selectedCategoryKinds: [],
+            selectedCountedFootprintComponentKinds: [.xcodeLogs],
+            selectedSimulatorDeviceUDIDs: []
+        )
+
+        let executor = CleanupExecutor(
+            fileOperator: StubCleanupFileOperator(existingPaths: ["/tmp/Logs/Xcode"]),
+            pathSizer: StubExecutionPathSizer(sizeByPath: ["/tmp/Logs/Xcode": 80]),
+            now: { Date(timeIntervalSince1970: 935) }
+        )
+
+        let report = executor.execute(snapshot: snapshot, selection: selection, allowDirectDelete: false)
+
+        #expect(report.results.count == 1)
+        #expect(report.succeededCount == 1)
+        #expect(report.failedCount == 0)
+        #expect(report.totalReclaimedBytes == 80)
+        #expect(report.results.first?.item.kind == .countedFootprintComponent)
+        #expect(report.results.first?.item.countedFootprintComponentKind == .xcodeLogs)
+        #expect(report.results.first?.operation == .moveToTrash)
+        #expect(report.results.first?.pathResults.first?.path == "/tmp/Logs/Xcode")
+    }
+
+    @Test("Cleanup executor blocks CoreSimulator log cleanup while simulator tools are running")
+    func executorBlocksCoreSimulatorLogCleanupWhileSimulatorToolsRun() {
+        let snapshot = makeExecutionSnapshot()
+        let selection = DryRunSelection(
+            selectedCategoryKinds: [],
+            selectedCountedFootprintComponentKinds: [.coreSimulatorLogs],
+            selectedSimulatorDeviceUDIDs: []
+        )
+
+        let executor = CleanupExecutor(
+            fileOperator: StubCleanupFileOperator(existingPaths: ["/tmp/Logs/CoreSimulator"]),
+            pathSizer: StubExecutionPathSizer(sizeByPath: ["/tmp/Logs/CoreSimulator": 120]),
+            now: { Date(timeIntervalSince1970: 936) }
+        )
+
+        let report = executor.execute(snapshot: snapshot, selection: selection, allowDirectDelete: false)
+
+        #expect(report.results.count == 1)
+        #expect(report.blockedCount == 1)
+        #expect(report.succeededCount == 0)
+        #expect(report.totalReclaimedBytes == 0)
+        #expect(report.results.first?.item.kind == .countedFootprintComponent)
+        #expect(report.results.first?.item.countedFootprintComponentKind == .coreSimulatorLogs)
+        #expect(report.results.first?.status == .blocked)
+    }
+
     @Test("Cleanup executor blocks per-runtime simulator cleanup when simulator tools are running")
     func executorBlocksRunningSimulatorRuntimeCleanup() {
         let snapshot = makeExecutionSnapshot()
@@ -701,11 +759,32 @@ private func makeExecutionSnapshot(
         ]
     )
 
+    let countedOnlyComponents = [
+        CountedFootprintComponentUsage(
+            kind: .xcodeLogs,
+            title: "Xcode Logs",
+            bytes: 80,
+            paths: ["/tmp/Logs/Xcode"],
+            ownershipSummary: "Counted in total footprint only; owned by Xcode log history."
+        ),
+        CountedFootprintComponentUsage(
+            kind: .coreSimulatorLogs,
+            title: "CoreSimulator Logs",
+            bytes: 120,
+            paths: ["/tmp/Logs/CoreSimulator"],
+            ownershipSummary: "Counted in total footprint only; owned by CoreSimulator log history."
+        ),
+    ]
+
     return XcodeInventorySnapshot(
         scannedAt: Date(timeIntervalSince1970: 100),
         activeDeveloperDirectoryPath: "/Applications/Xcode-Active.app/Contents/Developer",
         installs: installs,
-        storage: XcodeStorageUsage(categories: categories, totalBytes: 640),
+        storage: XcodeStorageUsage(
+            categories: categories,
+            countedOnlyComponents: countedOnlyComponents,
+            totalBytes: 840
+        ),
         simulator: simulator,
         runtimeTelemetry: RuntimeTelemetry(
             totalXcodeRunningInstances: runningXcodeInstances,

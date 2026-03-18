@@ -18,6 +18,8 @@ struct CLIProgressRendererTests {
             "--dry-run",
             "--plan-category", "derivedData",
             "--plan-category=deviceSupport",
+            "--plan-counted-component", "xcodeLogs",
+            "--plan-counted-component=coreSimulatorLogs",
             "--plan-simulator-device", "AAA-BBB",
             "--plan-simulator-device=CCC-DDD",
             "--plan-xcode-install", "/Applications/Xcode-beta.app",
@@ -26,6 +28,7 @@ struct CLIProgressRendererTests {
 
         #expect(options.mode == .dryRun)
         #expect(options.selectedCategoryKinds == [.derivedData, .deviceSupport])
+        #expect(options.selectedCountedFootprintComponentKinds == [.coreSimulatorLogs, .xcodeLogs])
         #expect(options.selectedSimulatorDeviceUDIDs == ["AAA-BBB", "CCC-DDD"])
         #expect(options.selectedXcodeInstallPaths == ["/Applications/Xcode-beta.app", "/Applications/Xcode-old.app"])
     }
@@ -35,6 +38,7 @@ struct CLIProgressRendererTests {
         let options = try CLIOptions.parse(arguments: ["--dry-run"])
         #expect(options.mode == .dryRun)
         #expect(Set(options.selectedCategoryKinds) == Set(DryRunSelection.safeCategoryDefaults.selectedCategoryKinds))
+        #expect(options.selectedCountedFootprintComponentKinds.isEmpty)
         #expect(options.selectedSimulatorDeviceUDIDs.isEmpty)
         #expect(options.selectedXcodeInstallPaths.isEmpty)
     }

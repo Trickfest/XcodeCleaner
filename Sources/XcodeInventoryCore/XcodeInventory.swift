@@ -134,6 +134,11 @@ public enum CountedFootprintComponentKind: String, Codable, CaseIterable, Sendab
     case xcpgDevices
     case xcTestDevices
     case additionalXcodeState
+
+    public static let explicitOptInCleanupKinds: [CountedFootprintComponentKind] = [
+        .xcodeLogs,
+        .coreSimulatorLogs,
+    ]
 }
 
 public struct CountedFootprintComponentUsage: Codable, Equatable, Identifiable, Sendable {
@@ -353,6 +358,7 @@ public struct XcodeInventorySnapshot: Codable, Equatable, Sendable {
 
 public struct DryRunSelection: Codable, Equatable, Sendable {
     public let selectedCategoryKinds: [StorageCategoryKind]
+    public let selectedCountedFootprintComponentKinds: [CountedFootprintComponentKind]
     public let selectedSimulatorDeviceUDIDs: [String]
     public let selectedSimulatorRuntimeIdentifiers: [String]
     public let selectedPhysicalDeviceSupportDirectoryPaths: [String]
@@ -360,12 +366,16 @@ public struct DryRunSelection: Codable, Equatable, Sendable {
 
     public init(
         selectedCategoryKinds: [StorageCategoryKind],
+        selectedCountedFootprintComponentKinds: [CountedFootprintComponentKind] = [],
         selectedSimulatorDeviceUDIDs: [String],
         selectedSimulatorRuntimeIdentifiers: [String] = [],
         selectedPhysicalDeviceSupportDirectoryPaths: [String] = [],
         selectedXcodeInstallPaths: [String] = []
     ) {
         self.selectedCategoryKinds = Array(Set(selectedCategoryKinds)).sorted {
+            $0.rawValue < $1.rawValue
+        }
+        self.selectedCountedFootprintComponentKinds = Array(Set(selectedCountedFootprintComponentKinds)).sorted {
             $0.rawValue < $1.rawValue
         }
         self.selectedSimulatorDeviceUDIDs = Array(Set(selectedSimulatorDeviceUDIDs)).sorted()
@@ -381,6 +391,7 @@ public struct DryRunSelection: Codable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case selectedCategoryKinds
+        case selectedCountedFootprintComponentKinds
         case selectedSimulatorDeviceUDIDs
         case selectedSimulatorRuntimeIdentifiers
         case selectedPhysicalDeviceSupportDirectoryPaths
@@ -391,16 +402,18 @@ public struct DryRunSelection: Codable, Equatable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.init(
             selectedCategoryKinds: try container.decode([StorageCategoryKind].self, forKey: .selectedCategoryKinds),
+            selectedCountedFootprintComponentKinds: try container.decodeIfPresent([CountedFootprintComponentKind].self, forKey: .selectedCountedFootprintComponentKinds) ?? [],
             selectedSimulatorDeviceUDIDs: try container.decode([String].self, forKey: .selectedSimulatorDeviceUDIDs),
-            selectedSimulatorRuntimeIdentifiers: try container.decode([String].self, forKey: .selectedSimulatorRuntimeIdentifiers),
-            selectedPhysicalDeviceSupportDirectoryPaths: try container.decode([String].self, forKey: .selectedPhysicalDeviceSupportDirectoryPaths),
-            selectedXcodeInstallPaths: try container.decode([String].self, forKey: .selectedXcodeInstallPaths)
+            selectedSimulatorRuntimeIdentifiers: try container.decodeIfPresent([String].self, forKey: .selectedSimulatorRuntimeIdentifiers) ?? [],
+            selectedPhysicalDeviceSupportDirectoryPaths: try container.decodeIfPresent([String].self, forKey: .selectedPhysicalDeviceSupportDirectoryPaths) ?? [],
+            selectedXcodeInstallPaths: try container.decodeIfPresent([String].self, forKey: .selectedXcodeInstallPaths) ?? []
         )
     }
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(selectedCategoryKinds, forKey: .selectedCategoryKinds)
+        try container.encode(selectedCountedFootprintComponentKinds, forKey: .selectedCountedFootprintComponentKinds)
         try container.encode(selectedSimulatorDeviceUDIDs, forKey: .selectedSimulatorDeviceUDIDs)
         try container.encode(selectedSimulatorRuntimeIdentifiers, forKey: .selectedSimulatorRuntimeIdentifiers)
         try container.encode(selectedPhysicalDeviceSupportDirectoryPaths, forKey: .selectedPhysicalDeviceSupportDirectoryPaths)
@@ -418,6 +431,7 @@ public struct DryRunSelection: Codable, Equatable, Sendable {
 
 public enum DryRunItemKind: String, Codable, Sendable {
     case storageCategory
+    case countedFootprintComponent
     case simulatorDevice
     case simulatorRuntime
     case deviceSupportDirectory
@@ -431,6 +445,7 @@ public struct DryRunPlanItem: Codable, Equatable, Identifiable, Sendable {
 
     public let kind: DryRunItemKind
     public let storageCategoryKind: StorageCategoryKind?
+    public let countedFootprintComponentKind: CountedFootprintComponentKind?
     public let staleArtifactID: String?
     public let staleArtifactKind: StaleArtifactKind?
     public let title: String
@@ -442,6 +457,7 @@ public struct DryRunPlanItem: Codable, Equatable, Identifiable, Sendable {
     public init(
         kind: DryRunItemKind,
         storageCategoryKind: StorageCategoryKind? = nil,
+        countedFootprintComponentKind: CountedFootprintComponentKind? = nil,
         staleArtifactID: String? = nil,
         staleArtifactKind: StaleArtifactKind? = nil,
         title: String,
@@ -452,6 +468,7 @@ public struct DryRunPlanItem: Codable, Equatable, Identifiable, Sendable {
     ) {
         self.kind = kind
         self.storageCategoryKind = storageCategoryKind
+        self.countedFootprintComponentKind = countedFootprintComponentKind
         self.staleArtifactID = staleArtifactID
         self.staleArtifactKind = staleArtifactKind
         self.title = title

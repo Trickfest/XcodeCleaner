@@ -343,6 +343,21 @@ public struct CleanupExecutor: @unchecked Sendable {
                 break
             }
             return nil
+        case .countedFootprintComponent:
+            switch item.countedFootprintComponentKind {
+            case .xcodeLogs:
+                if snapshot.runtimeTelemetry.totalXcodeRunningInstances > 0 {
+                    return "Blocked: close running Xcode instances before deleting Xcode logs."
+                }
+            case .coreSimulatorLogs:
+                if snapshot.runtimeTelemetry.totalSimulatorAppRunningInstances > 0
+                    || snapshot.simulator.devices.contains(where: simulatorDeviceIsRunning) {
+                    return "Blocked: close Simulator and shut down booted devices before deleting CoreSimulator logs."
+                }
+            case .documentationCache, .developerPackages, .dvtDownloads, .xcpgDevices, .xcTestDevices, .additionalXcodeState, .none:
+                break
+            }
+            return nil
         case .simulatorDevice:
             let selectedPaths = Set(item.paths.map(normalize(path:)))
             if let device = snapshot.simulator.devices.first(where: { selectedPaths.contains(normalize(path: $0.dataPath)) }) {
@@ -455,6 +470,8 @@ public struct CleanupExecutor: @unchecked Sendable {
             guard item.storageCategoryKind == .simulatorData else {
                 return nil
             }
+        case .countedFootprintComponent:
+            return nil
         case .simulatorDevice:
             if let device = snapshot.simulator.devices.first(where: {
                 normalize(path: $0.dataPath) == normalizedPath

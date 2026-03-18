@@ -214,7 +214,11 @@ struct CleanupSectionView: View {
         runtimeStaleReasonsByIdentifier: [String: [SimulatorRuntimeStaleReason]],
         deviceStaleReasonsByUDID: [String: [SimulatorDeviceStaleReason]]
     ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let cleanupEligibleFootprintComponents = AppPresentation.cleanupEligibleFootprintComponents(
+            in: snapshot.storage
+        )
+
+        return VStack(alignment: .leading, spacing: 10) {
             Text("Select Cleanup Scope")
                 .font(.subheadline.weight(.semibold))
 
@@ -237,6 +241,37 @@ struct CleanupSectionView: View {
                         Text(AppPresentation.formatBytes(category.bytes))
                             .font(.callout.monospacedDigit())
                             .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            if !cleanupEligibleFootprintComponents.isEmpty {
+                Text("Explicit Opt-In Cleanup")
+                    .font(.callout.weight(.medium))
+                Text("These additional footprint components are safe enough to offer as manual cleanup targets, but they are not part of the default-safe cleanup set.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                ForEach(cleanupEligibleFootprintComponents) { component in
+                    Toggle(isOn: countedFootprintComponentBinding(for: component.kind)) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(component.title)
+                                Text(AppPresentation.cleanupFootprintComponentHelpText(for: component.kind))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                if !component.paths.isEmpty {
+                                    Text(component.paths.joined(separator: "\n"))
+                                        .font(.caption.monospaced())
+                                        .foregroundStyle(.secondary)
+                                        .textSelection(.enabled)
+                                }
+                            }
+                            Spacer()
+                            Text(AppPresentation.formatBytes(component.bytes))
+                                .font(.callout.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
@@ -624,6 +659,19 @@ struct CleanupSectionView: View {
                     selectionState.selectedSimulatorRuntimeIdentifiers.insert(identifier)
                 } else {
                     selectionState.selectedSimulatorRuntimeIdentifiers.remove(identifier)
+                }
+            }
+        )
+    }
+
+    private func countedFootprintComponentBinding(for kind: CountedFootprintComponentKind) -> Binding<Bool> {
+        Binding(
+            get: { selectionState.selectedCountedFootprintComponentKinds.contains(kind) },
+            set: { isSelected in
+                if isSelected {
+                    selectionState.selectedCountedFootprintComponentKinds.insert(kind)
+                } else {
+                    selectionState.selectedCountedFootprintComponentKinds.remove(kind)
                 }
             }
         )

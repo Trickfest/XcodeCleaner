@@ -76,10 +76,12 @@ Prebuilt signed/notarized distribution is optional future work, not a current re
   - Shared dry-run planning with deterministic ordering, reclaim estimates, and plan notes.
   - Move-to-trash first, with optional direct-delete fallback.
   - Known simulator runtimes and known simulator devices are removed through `simctl`; filesystem deletion remains for ordinary cache/artifact paths and orphaned leftovers.
+  - Xcode logs and CoreSimulator logs are available as explicit opt-in cleanup targets; they are not part of the default-safe cleanup set.
   - Guardrails for active/running Xcode installs and running/booted simulator devices.
   - Optional global block while Xcode or the Simulator app is running.
 - Targeted cleanup controls:
   - GUI aggregate category selection for Derived Data, MobileDevice Crash Logs, Archives, and Simulator Data.
+  - GUI and CLI explicit opt-in selection for cleanup-safe log roots such as `~/Library/Logs/Xcode` and `~/Library/Logs/CoreSimulator`.
   - GUI itemized selection for simulator runtimes, simulator devices, Xcode installs, and physical device support directories.
   - CLI selectors for categories, simulator devices, and Xcode installs.
   - CLI stale-artifact list/clean modes for stale simulator runtimes and orphaned simulator device data. Orphaned simulator runtimes are reported but not deleted in-app.
@@ -107,8 +109,8 @@ Currently counted in this build:
 - CoreSimulator device data, runtime bundles, and simulator caches
 - Documentation cache under `~/Library/Developer/Xcode/DocumentationCache` (counted only)
 - Developer packages under `~/Library/Developer/Packages` (counted only)
-- Xcode logs under `~/Library/Logs/Xcode` (counted only)
-- CoreSimulator logs under `~/Library/Logs/CoreSimulator` (counted only)
+- Xcode logs under `~/Library/Logs/Xcode` (explicit opt-in cleanup)
+- CoreSimulator logs under `~/Library/Logs/CoreSimulator` (explicit opt-in cleanup)
 - Developer tool downloads under `~/Library/Developer/DVTDownloads` (counted only)
 - Xcode Playground/CoreSimulator device-set state under `~/Library/Developer/XCPGDevices` (counted only)
 - XCTest device-set state under `~/Library/Developer/XCTestDevices` (counted only)

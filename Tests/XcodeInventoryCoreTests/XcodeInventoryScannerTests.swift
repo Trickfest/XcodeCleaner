@@ -621,6 +621,28 @@ struct XcodeInventoryScannerTests {
         #expect(plan.items.contains(where: { $0.title.contains("Simulator Device: iPhone 15") && $0.paths == ["/tmp/CoreSimulator/Devices/SIM-1"] }))
     }
 
+    @Test("Dry-run planner supports explicit opt-in log cleanup components")
+    func dryRunPlannerSupportsOptInLogCleanupComponents() {
+        let snapshot = makePlanningSnapshot()
+        let selection = DryRunSelection(
+            selectedCategoryKinds: [],
+            selectedCountedFootprintComponentKinds: [.xcodeLogs, .coreSimulatorLogs],
+            selectedSimulatorDeviceUDIDs: []
+        )
+
+        let plan = DryRunPlanner.makePlan(snapshot: snapshot, selection: selection)
+
+        #expect(plan.items.count == 2)
+        #expect(plan.selection.selectedCategoryKinds.isEmpty)
+        #expect(plan.selection.selectedCountedFootprintComponentKinds == [.coreSimulatorLogs, .xcodeLogs])
+        #expect(plan.items.map(\.kind).allSatisfy { $0 == .countedFootprintComponent })
+        #expect(plan.items.map(\.title) == ["CoreSimulator Logs", "Xcode Logs"])
+        #expect(plan.items[0].paths == ["/tmp/Logs/CoreSimulator"])
+        #expect(plan.items[1].paths == ["/tmp/Logs/Xcode"])
+        #expect(plan.totalReclaimableBytes == 5_632)
+        #expect(plan.notes.isEmpty)
+    }
+
     @Test("Dry-run planner avoids simulator double counting when device and aggregate are both selected")
     func dryRunPlannerSimulatorOverlapGuard() {
         let snapshot = makePlanningSnapshot()
@@ -923,11 +945,32 @@ private func makePlanningSnapshot() -> XcodeInventorySnapshot {
         ]
     )
 
+    let countedOnlyComponents = [
+        CountedFootprintComponentUsage(
+            kind: .xcodeLogs,
+            title: "Xcode Logs",
+            bytes: 1_536,
+            paths: ["/tmp/Logs/Xcode"],
+            ownershipSummary: "Counted in total footprint only; owned by Xcode log history."
+        ),
+        CountedFootprintComponentUsage(
+            kind: .coreSimulatorLogs,
+            title: "CoreSimulator Logs",
+            bytes: 4_096,
+            paths: ["/tmp/Logs/CoreSimulator"],
+            ownershipSummary: "Counted in total footprint only; owned by CoreSimulator log history."
+        ),
+    ]
+
     return XcodeInventorySnapshot(
         scannedAt: Date(timeIntervalSince1970: 10),
         activeDeveloperDirectoryPath: nil,
         installs: [],
-        storage: XcodeStorageUsage(categories: categories, totalBytes: 23_552),
+        storage: XcodeStorageUsage(
+            categories: categories,
+            countedOnlyComponents: countedOnlyComponents,
+            totalBytes: 29_184
+        ),
         simulator: simulator,
         runtimeTelemetry: RuntimeTelemetry(totalXcodeRunningInstances: 0, totalSimulatorAppRunningInstances: 0)
     )

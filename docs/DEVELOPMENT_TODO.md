@@ -25,7 +25,7 @@ Last updated: 2026-03-17
 - [x] Revisit whether `~/Library/Developer/XCPGDevices` should count toward `Total Xcode Footprint`, since it appears to be Playground-related developer state and may not belong under an Xcode-only footprint definition.
 - [x] Keep external preference and saved-state locations out of the normal footprint total for now, but allow small standard Xcode-managed roots under `~/Library/Developer/Xcode` to roll into count-only footprint state where appropriate.
 - [x] Audit standard Xcode result/log storage roots and include the relevant ones in `Total Xcode Footprint`.
-- [ ] Add explicit opt-in cleanup support for standard Xcode result/log storage that is safe to remove, without making it part of the default-safe cleanup set.
+- [x] Add explicit opt-in cleanup support for standard Xcode result/log storage that is safe to remove, without making it part of the default-safe cleanup set.
 - [ ] Add tests that cover modern simulator runtime layouts, especially volume-backed runtime locations under `/Library/Developer/CoreSimulator/Volumes/...`.
 - [ ] Add tests that verify aggregate totals match the union of tracked major storage roots and do not undercount when runtime bundle paths live outside the old hardcoded path.
 - [x] Update UI labeling and README wording so the footprint number's scope is explicit and matches the implementation.

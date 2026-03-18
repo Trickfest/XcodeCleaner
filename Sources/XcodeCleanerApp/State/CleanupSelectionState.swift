@@ -2,6 +2,7 @@ import XcodeInventoryCore
 
 struct CleanupSelectionState {
     var selectedCategoryKinds = Set(guiDefaultCleanupCategoryKinds)
+    var selectedCountedFootprintComponentKinds: Set<CountedFootprintComponentKind> = []
     var selectedSimulatorDeviceUDIDs: Set<String> = []
     var selectedSimulatorRuntimeIdentifiers: Set<String> = []
     var selectedXcodeInstallPaths: Set<String> = []
@@ -11,6 +12,11 @@ struct CleanupSelectionState {
     var blockCleanupWhileToolsRunning = true
 
     func selection(for snapshot: XcodeInventorySnapshot) -> DryRunSelection {
+        let availableCountedComponentKinds = Set(
+            snapshot.storage.countedOnlyComponents
+                .filter { CountedFootprintComponentKind.explicitOptInCleanupKinds.contains($0.kind) && !$0.paths.isEmpty }
+                .map(\.kind)
+        )
         let availableDeviceUDIDs = Set(snapshot.simulator.devices.map(\.udid))
         let availableRuntimeIdentifiers = Set(snapshot.simulator.runtimes.map(\.identifier))
         let availableInstallPaths = Set(snapshot.installs.map(\.path))
@@ -18,6 +24,9 @@ struct CleanupSelectionState {
 
         return DryRunSelection(
             selectedCategoryKinds: Array(selectedCategoryKinds),
+            selectedCountedFootprintComponentKinds: Array(
+                selectedCountedFootprintComponentKinds.intersection(availableCountedComponentKinds)
+            ),
             selectedSimulatorDeviceUDIDs: Array(selectedSimulatorDeviceUDIDs.intersection(availableDeviceUDIDs)),
             selectedSimulatorRuntimeIdentifiers: Array(selectedSimulatorRuntimeIdentifiers.intersection(availableRuntimeIdentifiers)),
             selectedPhysicalDeviceSupportDirectoryPaths: Array(

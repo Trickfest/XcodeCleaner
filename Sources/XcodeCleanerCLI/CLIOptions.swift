@@ -19,6 +19,7 @@ struct CLIOptions: Equatable {
     let switchActiveXcodePath: String?
     let selectedStaleArtifactIDs: [String]
     let selectedCategoryKinds: [StorageCategoryKind]
+    let selectedCountedFootprintComponentKinds: [CountedFootprintComponentKind]
     let selectedSimulatorDeviceUDIDs: [String]
     let selectedXcodeInstallPaths: [String]
 
@@ -34,6 +35,7 @@ struct CLIOptions: Equatable {
         var skipIfToolsRunning = false
         var selectedStaleArtifactIDs: [String] = []
         var selectedCategoryKinds: [StorageCategoryKind] = []
+        var selectedCountedFootprintComponentKinds: [CountedFootprintComponentKind] = []
         var selectedSimulatorDeviceUDIDs: [String] = []
         var selectedXcodeInstallPaths: [String] = []
 
@@ -83,6 +85,18 @@ struct CLIOptions: Equatable {
                 }
                 selectedCategoryKinds.append(kind)
                 index += 1
+            case "--plan-counted-component":
+                let valueIndex = index + 1
+                guard valueIndex < arguments.count else {
+                    throw CLIOptionsError.missingValue(argument)
+                }
+                let value = arguments[valueIndex]
+                guard let kind = CountedFootprintComponentKind(rawValue: value),
+                      CountedFootprintComponentKind.explicitOptInCleanupKinds.contains(kind) else {
+                    throw CLIOptionsError.invalidCountedFootprintComponent(value)
+                }
+                selectedCountedFootprintComponentKinds.append(kind)
+                index += 1
             case "--plan-simulator-device":
                 let valueIndex = index + 1
                 guard valueIndex < arguments.count else {
@@ -104,6 +118,13 @@ struct CLIOptions: Equatable {
                         throw CLIOptionsError.invalidCategory(value)
                     }
                     selectedCategoryKinds.append(kind)
+                } else if argument.hasPrefix("--plan-counted-component=") {
+                    let value = String(argument.dropFirst("--plan-counted-component=".count))
+                    guard let kind = CountedFootprintComponentKind(rawValue: value),
+                          CountedFootprintComponentKind.explicitOptInCleanupKinds.contains(kind) else {
+                        throw CLIOptionsError.invalidCountedFootprintComponent(value)
+                    }
+                    selectedCountedFootprintComponentKinds.append(kind)
                 } else if argument.hasPrefix("--plan-simulator-device=") {
                     let value = String(argument.dropFirst("--plan-simulator-device=".count))
                     selectedSimulatorDeviceUDIDs.append(value)
@@ -145,6 +166,7 @@ struct CLIOptions: Equatable {
 
         if (dryRun || execute),
            selectedCategoryKinds.isEmpty,
+           selectedCountedFootprintComponentKinds.isEmpty,
            selectedSimulatorDeviceUDIDs.isEmpty,
            selectedXcodeInstallPaths.isEmpty {
             selectedCategoryKinds = DryRunSelection.safeCategoryDefaults.selectedCategoryKinds
@@ -152,6 +174,7 @@ struct CLIOptions: Equatable {
 
         if !(dryRun || execute),
            (!selectedCategoryKinds.isEmpty
+               || !selectedCountedFootprintComponentKinds.isEmpty
                || !selectedSimulatorDeviceUDIDs.isEmpty
                || !selectedXcodeInstallPaths.isEmpty) {
             throw CLIOptionsError.requiresPlanningMode
@@ -181,6 +204,7 @@ struct CLIOptions: Equatable {
             switchActiveXcodePath: switchActiveXcodePath,
             selectedStaleArtifactIDs: Array(Set(selectedStaleArtifactIDs)).sorted(),
             selectedCategoryKinds: Array(Set(selectedCategoryKinds)).sorted { $0.rawValue < $1.rawValue },
+            selectedCountedFootprintComponentKinds: Array(Set(selectedCountedFootprintComponentKinds)).sorted { $0.rawValue < $1.rawValue },
             selectedSimulatorDeviceUDIDs: Array(Set(selectedSimulatorDeviceUDIDs)).sorted(),
             selectedXcodeInstallPaths: Array(Set(selectedXcodeInstallPaths)).sorted()
         )
@@ -191,6 +215,7 @@ enum CLIOptionsError: LocalizedError, Equatable {
     case unrecognizedArgument(String)
     case missingValue(String)
     case invalidCategory(String)
+    case invalidCountedFootprintComponent(String)
     case conflictingModes
     case requiresPlanningMode
     case requiresExecute(String)
@@ -205,10 +230,13 @@ enum CLIOptionsError: LocalizedError, Equatable {
         case .invalidCategory(let value):
             let available = StorageCategoryKind.allCases.map(\.rawValue).joined(separator: ", ")
             return "invalid category '\(value)'; expected one of: \(available)"
+        case .invalidCountedFootprintComponent(let value):
+            let available = CountedFootprintComponentKind.explicitOptInCleanupKinds.map(\.rawValue).joined(separator: ", ")
+            return "invalid counted footprint component '\(value)'; expected one of: \(available)"
         case .conflictingModes:
             return "--dry-run and --execute cannot be used together"
         case .requiresPlanningMode:
-            return "--plan-category, --plan-simulator-device, and --plan-xcode-install require --dry-run or --execute"
+            return "--plan-category, --plan-counted-component, --plan-simulator-device, and --plan-xcode-install require --dry-run or --execute"
         case .requiresExecute(let option):
             return "\(option) requires --execute or --clean-stale-artifacts"
         case .requiresCleanStaleArtifacts:
