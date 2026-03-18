@@ -328,6 +328,7 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
     ) -> [CountedFootprintComponentUsage] {
         let developerRoot = homeDirectoryURL.appendingPathComponent("Library/Developer", isDirectory: true)
         let xcodeRoot = developerRoot.appendingPathComponent("Xcode", isDirectory: true)
+        let logsRoot = homeDirectoryURL.appendingPathComponent("Library/Logs", isDirectory: true)
 
         let components = [
             makeFootprintComponent(
@@ -341,6 +342,18 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
                 title: "Developer Packages",
                 paths: [developerRoot.appendingPathComponent("Packages", isDirectory: true)],
                 ownershipSummary: "Counted in total footprint only; owned by Apple developer support packages downloaded for Xcode."
+            ),
+            makeFootprintComponent(
+                kind: .xcodeLogs,
+                title: "Xcode Logs",
+                paths: [logsRoot.appendingPathComponent("Xcode", isDirectory: true)],
+                ownershipSummary: "Counted in total footprint only; owned by Xcode log and result history stored under ~/Library/Logs/Xcode."
+            ),
+            makeFootprintComponent(
+                kind: .coreSimulatorLogs,
+                title: "CoreSimulator Logs",
+                paths: [logsRoot.appendingPathComponent("CoreSimulator", isDirectory: true)],
+                ownershipSummary: "Counted in total footprint only; owned by CoreSimulator log history stored under ~/Library/Logs/CoreSimulator."
             ),
             makeFootprintComponent(
                 kind: .dvtDownloads,

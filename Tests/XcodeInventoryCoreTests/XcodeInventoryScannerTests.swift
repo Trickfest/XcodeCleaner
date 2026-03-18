@@ -170,7 +170,7 @@ struct XcodeInventoryScannerTests {
         #expect(snapshot.installs.first?.safetyClassification == .destructive)
         #expect(snapshot.storage.totalBytes == 6_440)
         #expect(snapshot.storage.categories.count == 6)
-        #expect(snapshot.storage.countedOnlyComponents.count == 6)
+        #expect(snapshot.storage.countedOnlyComponents.count == 8)
         #expect(snapshot.storage.categories[0].kind == .xcodeApplications)
         #expect(snapshot.storage.categories[0].bytes == 3_000)
         #expect(snapshot.storage.categories[0].safetyClassification == .destructive)
@@ -226,6 +226,12 @@ struct XcodeInventoryScannerTests {
         let packagesPath = fakeHome
             .appendingPathComponent("Library/Developer/Packages", isDirectory: true)
             .path
+        let xcodeLogsPath = fakeHome
+            .appendingPathComponent("Library/Logs/Xcode", isDirectory: true)
+            .path
+        let coreSimulatorLogsPath = fakeHome
+            .appendingPathComponent("Library/Logs/CoreSimulator", isDirectory: true)
+            .path
         let dvtDownloadsPath = fakeHome
             .appendingPathComponent("Library/Developer/DVTDownloads", isDirectory: true)
             .path
@@ -257,6 +263,8 @@ struct XcodeInventoryScannerTests {
                 deviceSupportPath: 300,
                 documentationCachePath: 500,
                 packagesPath: 600,
+                xcodeLogsPath: 700,
+                coreSimulatorLogsPath: 800,
                 dvtDownloadsPath: 0,
                 xcpgDevicesPath: 0,
                 xcTestDevicesPath: 0,
@@ -278,14 +286,20 @@ struct XcodeInventoryScannerTests {
         #expect(snapshot.storage.categories.count == 6)
         #expect(snapshot.storage.categories.contains(where: { $0.title == "Documentation Cache" }) == false)
         #expect(snapshot.storage.categories.contains(where: { $0.title == "Developer Packages" }) == false)
-        #expect(snapshot.storage.totalBytes == 1_766)
-        #expect(snapshot.storage.countedOnlyComponents.count == 6)
+        #expect(snapshot.storage.categories.contains(where: { $0.title == "Xcode Logs" }) == false)
+        #expect(snapshot.storage.categories.contains(where: { $0.title == "CoreSimulator Logs" }) == false)
+        #expect(snapshot.storage.totalBytes == 3_266)
+        #expect(snapshot.storage.countedOnlyComponents.count == 8)
         #expect(countedComponentBytes(for: .documentationCache, in: snapshot) == 500)
         #expect(countedComponentBytes(for: .developerPackages, in: snapshot) == 600)
+        #expect(countedComponentBytes(for: .xcodeLogs, in: snapshot) == 700)
+        #expect(countedComponentBytes(for: .coreSimulatorLogs, in: snapshot) == 800)
         #expect(countedComponentBytes(for: .dvtDownloads, in: snapshot) == 0)
         #expect(countedComponentBytes(for: .xcpgDevices, in: snapshot) == 0)
         #expect(countedComponentBytes(for: .xcTestDevices, in: snapshot) == 0)
         #expect(countedComponentBytes(for: .additionalXcodeState, in: snapshot) == 66)
+        #expect(countedComponentPaths(for: .xcodeLogs, in: snapshot) == [xcodeLogsPath])
+        #expect(countedComponentPaths(for: .coreSimulatorLogs, in: snapshot) == [coreSimulatorLogsPath])
         #expect(countedComponentPaths(for: .dvtDownloads, in: snapshot) == [dvtDownloadsPath])
         #expect(countedComponentPaths(for: .xcpgDevices, in: snapshot) == [xcpgDevicesPath])
         #expect(countedComponentPaths(for: .xcTestDevices, in: snapshot) == [xcTestDevicesPath])

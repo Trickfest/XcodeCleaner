@@ -128,6 +128,8 @@ public struct StorageCategoryUsage: Codable, Equatable, Identifiable, Sendable {
 public enum CountedFootprintComponentKind: String, Codable, CaseIterable, Sendable {
     case documentationCache
     case developerPackages
+    case xcodeLogs
+    case coreSimulatorLogs
     case dvtDownloads
     case xcpgDevices
     case xcTestDevices

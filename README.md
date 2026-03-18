@@ -61,7 +61,7 @@ Prebuilt signed/notarized distribution is optional future work, not a current re
 - Read-only inventory and accounting:
   - Xcode installs, active developer directory, version/build/path, ownership, and safety classification.
   - Storage categories: Xcode apps, Derived Data, MobileDevice Crash Logs, Archives, iOS device support, Simulator data.
-  - Additional counted-only footprint components such as DocumentationCache, developer packages, DVTDownloads, XCTestDevices, and smaller Xcode-managed state roots.
+  - Additional counted-only footprint components such as DocumentationCache, developer packages, Xcode/CoreSimulator logs, DVTDownloads, XCTestDevices, and smaller Xcode-managed state roots.
   - Itemized simulator runtimes and simulator devices with metadata, size, stale markers, and running-state information.
   - Itemized physical device support directories with parsed metadata, modification dates, and size.
 - Runtime telemetry:
@@ -107,6 +107,8 @@ Currently counted in this build:
 - CoreSimulator device data, runtime bundles, and simulator caches
 - Documentation cache under `~/Library/Developer/Xcode/DocumentationCache` (counted only)
 - Developer packages under `~/Library/Developer/Packages` (counted only)
+- Xcode logs under `~/Library/Logs/Xcode` (counted only)
+- CoreSimulator logs under `~/Library/Logs/CoreSimulator` (counted only)
 - Developer tool downloads under `~/Library/Developer/DVTDownloads` (counted only)
 - Xcode Playground/CoreSimulator device-set state under `~/Library/Developer/XCPGDevices` (counted only)
 - XCTest device-set state under `~/Library/Developer/XCTestDevices` (counted only)

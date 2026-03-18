@@ -95,6 +95,10 @@ enum AppPresentation {
                 return "Documentation cache under ~/Library/Developer/Xcode/DocumentationCache. (counted only)"
             case .developerPackages:
                 return "Developer packages under ~/Library/Developer/Packages. (counted only)"
+            case .xcodeLogs:
+                return "Xcode logs under ~/Library/Logs/Xcode. (counted only)"
+            case .coreSimulatorLogs:
+                return "CoreSimulator logs under ~/Library/Logs/CoreSimulator. (counted only)"
             case .dvtDownloads:
                 return "Developer tool downloads under ~/Library/Developer/DVTDownloads. (counted only)"
             case .xcpgDevices:
