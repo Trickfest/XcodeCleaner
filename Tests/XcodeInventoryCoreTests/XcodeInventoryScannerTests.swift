@@ -870,25 +870,26 @@ struct XcodeInventoryScannerTests {
         #expect(plan.items.contains(where: { $0.title.contains("Simulator Device: iPhone 15") && $0.paths == ["/tmp/CoreSimulator/Devices/SIM-1"] }))
     }
 
-    @Test("Dry-run planner supports explicit opt-in log cleanup components")
-    func dryRunPlannerSupportsOptInLogCleanupComponents() {
+    @Test("Dry-run planner supports explicit opt-in counted cleanup components")
+    func dryRunPlannerSupportsOptInCountedCleanupComponents() {
         let snapshot = makePlanningSnapshot()
         let selection = DryRunSelection(
             selectedCategoryKinds: [],
-            selectedCountedFootprintComponentKinds: [.xcodeLogs, .coreSimulatorLogs],
+            selectedCountedFootprintComponentKinds: [.documentationCache, .xcodeLogs, .coreSimulatorLogs],
             selectedSimulatorDeviceUDIDs: []
         )
 
         let plan = DryRunPlanner.makePlan(snapshot: snapshot, selection: selection)
 
-        #expect(plan.items.count == 2)
+        #expect(plan.items.count == 3)
         #expect(plan.selection.selectedCategoryKinds.isEmpty)
-        #expect(plan.selection.selectedCountedFootprintComponentKinds == [.coreSimulatorLogs, .xcodeLogs])
+        #expect(plan.selection.selectedCountedFootprintComponentKinds == [.coreSimulatorLogs, .documentationCache, .xcodeLogs])
         #expect(plan.items.map(\.kind).allSatisfy { $0 == .countedFootprintComponent })
-        #expect(plan.items.map(\.title) == ["CoreSimulator Logs", "Xcode Logs"])
+        #expect(plan.items.map(\.title) == ["CoreSimulator Logs", "Documentation Cache", "Xcode Logs"])
         #expect(plan.items[0].paths == ["/tmp/Logs/CoreSimulator"])
-        #expect(plan.items[1].paths == ["/tmp/Logs/Xcode"])
-        #expect(plan.totalReclaimableBytes == 5_632)
+        #expect(plan.items[1].paths == ["/tmp/Developer/Xcode/DocumentationCache"])
+        #expect(plan.items[2].paths == ["/tmp/Logs/Xcode"])
+        #expect(plan.totalReclaimableBytes == 8_192)
         #expect(plan.notes.isEmpty)
     }
 
@@ -1196,6 +1197,13 @@ private func makePlanningSnapshot() -> XcodeInventorySnapshot {
 
     let countedOnlyComponents = [
         CountedFootprintComponentUsage(
+            kind: .documentationCache,
+            title: "Documentation Cache",
+            bytes: 2_560,
+            paths: ["/tmp/Developer/Xcode/DocumentationCache"],
+            ownershipSummary: "Counted in total footprint only; owned by downloaded Xcode documentation cache."
+        ),
+        CountedFootprintComponentUsage(
             kind: .xcodeLogs,
             title: "Xcode Logs",
             bytes: 1_536,
@@ -1218,7 +1226,7 @@ private func makePlanningSnapshot() -> XcodeInventorySnapshot {
         storage: XcodeStorageUsage(
             categories: categories,
             countedOnlyComponents: countedOnlyComponents,
-            totalBytes: 29_184
+            totalBytes: 31_744
         ),
         simulator: simulator,
         runtimeTelemetry: RuntimeTelemetry(totalXcodeRunningInstances: 0, totalSimulatorAppRunningInstances: 0)

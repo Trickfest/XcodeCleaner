@@ -28,7 +28,7 @@ Last updated: 2026-03-17
 - [x] Add explicit opt-in cleanup support for standard Xcode result/log storage that is safe to remove, without making it part of the default-safe cleanup set.
 - [x] Expand simulator-accounting regression tests to cover modern volume-backed CoreSimulator layouts and total-footprint invariants, including no undercounting and no double counting.
 - [x] Update UI labeling and README wording so the footprint number's scope is explicit and matches the implementation.
-- [ ] First cleanup expansion candidate: make `DocumentationCache` visible and optionally cleanable, but not part of the default safe cleanup set.
+- [x] First cleanup expansion candidate: make `DocumentationCache` visible and optionally cleanable, but not part of the default safe cleanup set.
 - [ ] Define and apply cleanup-safety classification for new cleanup candidates, keeping the default-safe set narrow and using explicit opt-in for higher-cost cleanup.
 - [ ] Design the destructive Full Xcode Removal workflow as an isolated Cleanup section with scope groups, dry-run preview, and strong confirmation for personal-state/delete-everything actions.
 

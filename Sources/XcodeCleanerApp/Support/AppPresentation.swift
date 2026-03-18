@@ -92,7 +92,7 @@ enum AppPresentation {
         let countedOnlyItems = storage.countedOnlyComponents.map { component in
             switch component.kind {
             case .documentationCache:
-                return "Documentation cache under ~/Library/Developer/Xcode/DocumentationCache. (counted only)"
+                return "Documentation cache under ~/Library/Developer/Xcode/DocumentationCache. (explicit opt-in cleanup)"
             case .developerPackages:
                 return "Developer packages under ~/Library/Developer/Packages. (counted only)"
             case .xcodeLogs:
@@ -146,11 +146,13 @@ enum AppPresentation {
         for kind: CountedFootprintComponentKind
     ) -> String {
         switch kind {
+        case .documentationCache:
+            return "Downloaded Xcode documentation cache under ~/Library/Developer/Xcode/DocumentationCache. Explicit opt-in only."
         case .xcodeLogs:
             return "Xcode log and result history under ~/Library/Logs/Xcode. Explicit opt-in only."
         case .coreSimulatorLogs:
             return "CoreSimulator log history under ~/Library/Logs/CoreSimulator. Explicit opt-in only."
-        case .documentationCache, .developerPackages, .dvtDownloads, .xcpgDevices, .xcTestDevices, .additionalXcodeState:
+        case .developerPackages, .dvtDownloads, .xcpgDevices, .xcTestDevices, .additionalXcodeState:
             return "Not a cleanup target in this build."
         }
     }

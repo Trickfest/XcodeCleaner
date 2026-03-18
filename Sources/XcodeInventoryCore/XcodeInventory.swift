@@ -136,6 +136,7 @@ public enum CountedFootprintComponentKind: String, Codable, CaseIterable, Sendab
     case additionalXcodeState
 
     public static let explicitOptInCleanupKinds: [CountedFootprintComponentKind] = [
+        .documentationCache,
         .xcodeLogs,
         .coreSimulatorLogs,
     ]

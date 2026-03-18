@@ -174,6 +174,64 @@ struct CleanupExecutorTests {
         #expect(report.results.first?.pathResults.first?.path == "/tmp/Logs/Xcode")
     }
 
+    @Test("Cleanup executor supports explicit opt-in Documentation Cache cleanup")
+    func executorSupportsOptInDocumentationCacheCleanup() {
+        let snapshot = makeExecutionSnapshot(
+            runningXcodeInstances: 0,
+            runningSimulatorAppInstances: 0,
+            bootedDeviceState: "Shutdown",
+            bootedDeviceRunningInstances: 0
+        )
+        let selection = DryRunSelection(
+            selectedCategoryKinds: [],
+            selectedCountedFootprintComponentKinds: [.documentationCache],
+            selectedSimulatorDeviceUDIDs: []
+        )
+
+        let executor = CleanupExecutor(
+            fileOperator: StubCleanupFileOperator(existingPaths: ["/tmp/Developer/Xcode/DocumentationCache"]),
+            pathSizer: StubExecutionPathSizer(sizeByPath: ["/tmp/Developer/Xcode/DocumentationCache": 90]),
+            now: { Date(timeIntervalSince1970: 935.5) }
+        )
+
+        let report = executor.execute(snapshot: snapshot, selection: selection, allowDirectDelete: false)
+
+        #expect(report.results.count == 1)
+        #expect(report.succeededCount == 1)
+        #expect(report.failedCount == 0)
+        #expect(report.totalReclaimedBytes == 90)
+        #expect(report.results.first?.item.kind == .countedFootprintComponent)
+        #expect(report.results.first?.item.countedFootprintComponentKind == .documentationCache)
+        #expect(report.results.first?.operation == .moveToTrash)
+        #expect(report.results.first?.pathResults.first?.path == "/tmp/Developer/Xcode/DocumentationCache")
+    }
+
+    @Test("Cleanup executor blocks Documentation Cache cleanup while Xcode is running")
+    func executorBlocksDocumentationCacheCleanupWhileXcodeRuns() {
+        let snapshot = makeExecutionSnapshot()
+        let selection = DryRunSelection(
+            selectedCategoryKinds: [],
+            selectedCountedFootprintComponentKinds: [.documentationCache],
+            selectedSimulatorDeviceUDIDs: []
+        )
+
+        let executor = CleanupExecutor(
+            fileOperator: StubCleanupFileOperator(existingPaths: ["/tmp/Developer/Xcode/DocumentationCache"]),
+            pathSizer: StubExecutionPathSizer(sizeByPath: ["/tmp/Developer/Xcode/DocumentationCache": 90]),
+            now: { Date(timeIntervalSince1970: 935.6) }
+        )
+
+        let report = executor.execute(snapshot: snapshot, selection: selection, allowDirectDelete: false)
+
+        #expect(report.results.count == 1)
+        #expect(report.blockedCount == 1)
+        #expect(report.succeededCount == 0)
+        #expect(report.totalReclaimedBytes == 0)
+        #expect(report.results.first?.item.kind == .countedFootprintComponent)
+        #expect(report.results.first?.item.countedFootprintComponentKind == .documentationCache)
+        #expect(report.results.first?.status == .blocked)
+    }
+
     @Test("Cleanup executor blocks CoreSimulator log cleanup while simulator tools are running")
     func executorBlocksCoreSimulatorLogCleanupWhileSimulatorToolsRun() {
         let snapshot = makeExecutionSnapshot()
@@ -761,6 +819,13 @@ private func makeExecutionSnapshot(
 
     let countedOnlyComponents = [
         CountedFootprintComponentUsage(
+            kind: .documentationCache,
+            title: "Documentation Cache",
+            bytes: 90,
+            paths: ["/tmp/Developer/Xcode/DocumentationCache"],
+            ownershipSummary: "Counted in total footprint only; owned by downloaded Xcode documentation cache."
+        ),
+        CountedFootprintComponentUsage(
             kind: .xcodeLogs,
             title: "Xcode Logs",
             bytes: 80,
@@ -783,7 +848,7 @@ private func makeExecutionSnapshot(
         storage: XcodeStorageUsage(
             categories: categories,
             countedOnlyComponents: countedOnlyComponents,
-            totalBytes: 840
+            totalBytes: 930
         ),
         simulator: simulator,
         runtimeTelemetry: RuntimeTelemetry(

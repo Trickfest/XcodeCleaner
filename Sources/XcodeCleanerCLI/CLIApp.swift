@@ -622,6 +622,7 @@ func printUsage(toStandardError: Bool = false) {
       - archives: Archived app builds under ~/Library/Developer/Xcode/Archives.
       - deviceSupport: Aggregate delete of all physical-device support directories under ~/Library/Developer/Xcode/iOS DeviceSupport.
       - simulatorData: Aggregate delete of CoreSimulator devices/caches/runtimes roots. Known registered devices and runtimes are removed via simctl when possible.
+      - documentationCache: Explicit opt-in cleanup of ~/Library/Developer/Xcode/DocumentationCache.
       - xcodeLogs: Explicit opt-in cleanup of ~/Library/Logs/Xcode.
       - coreSimulatorLogs: Explicit opt-in cleanup of ~/Library/Logs/CoreSimulator.
     """

@@ -345,8 +345,11 @@ public struct CleanupExecutor: @unchecked Sendable {
             return nil
         case .countedFootprintComponent:
             switch item.countedFootprintComponentKind {
-            case .xcodeLogs:
+            case .documentationCache, .xcodeLogs:
                 if snapshot.runtimeTelemetry.totalXcodeRunningInstances > 0 {
+                    if item.countedFootprintComponentKind == .documentationCache {
+                        return "Blocked: close running Xcode instances before deleting Documentation Cache."
+                    }
                     return "Blocked: close running Xcode instances before deleting Xcode logs."
                 }
             case .coreSimulatorLogs:
@@ -354,7 +357,7 @@ public struct CleanupExecutor: @unchecked Sendable {
                     || snapshot.simulator.devices.contains(where: simulatorDeviceIsRunning) {
                     return "Blocked: close Simulator and shut down booted devices before deleting CoreSimulator logs."
                 }
-            case .documentationCache, .developerPackages, .dvtDownloads, .xcpgDevices, .xcTestDevices, .additionalXcodeState, .none:
+            case .developerPackages, .dvtDownloads, .xcpgDevices, .xcTestDevices, .additionalXcodeState, .none:
                 break
             }
             return nil

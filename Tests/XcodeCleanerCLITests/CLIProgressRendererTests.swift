@@ -18,6 +18,7 @@ struct CLIProgressRendererTests {
             "--dry-run",
             "--plan-category", "derivedData",
             "--plan-category=deviceSupport",
+            "--plan-counted-component", "documentationCache",
             "--plan-counted-component", "xcodeLogs",
             "--plan-counted-component=coreSimulatorLogs",
             "--plan-simulator-device", "AAA-BBB",
@@ -28,7 +29,7 @@ struct CLIProgressRendererTests {
 
         #expect(options.mode == .dryRun)
         #expect(options.selectedCategoryKinds == [.derivedData, .deviceSupport])
-        #expect(options.selectedCountedFootprintComponentKinds == [.coreSimulatorLogs, .xcodeLogs])
+        #expect(options.selectedCountedFootprintComponentKinds == [.coreSimulatorLogs, .documentationCache, .xcodeLogs])
         #expect(options.selectedSimulatorDeviceUDIDs == ["AAA-BBB", "CCC-DDD"])
         #expect(options.selectedXcodeInstallPaths == ["/Applications/Xcode-beta.app", "/Applications/Xcode-old.app"])
     }
