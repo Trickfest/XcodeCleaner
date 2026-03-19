@@ -14,7 +14,7 @@ final class InventoryViewModel: ObservableObject {
     @Published private(set) var executionStatusMessage = "No cleanup executed yet."
     @Published private(set) var staleArtifactReport: StaleArtifactReport?
     @Published private(set) var lastStaleArtifactExecutionReport: CleanupExecutionReport?
-    @Published private(set) var staleArtifactStatusMessage = "No stale/orphaned artifact cleanup executed yet."
+    @Published private(set) var staleArtifactStatusMessage = "No stale or orphaned simulator cleanup has run yet."
     @Published private(set) var lastXcodeSwitchResult: ActiveXcodeSwitchResult?
     @Published private(set) var switchStatusMessage = "No active-Xcode switch executed yet."
     @Published private(set) var automationPolicies: [AutomationPolicy] = []
@@ -152,7 +152,7 @@ final class InventoryViewModel: ObservableObject {
         requireToolsStopped: Bool
     ) {
         guard let snapshot else {
-            staleArtifactStatusMessage = "No scan snapshot available for stale/orphaned artifact cleanup."
+            staleArtifactStatusMessage = "No scan results are available for stale or orphaned simulator cleanup."
             return
         }
         guard !isExecuting else {
@@ -168,12 +168,12 @@ final class InventoryViewModel: ObservableObject {
             defaultToAllCandidatesWhenSelectionEmpty: false
         )
         guard !plan.items.isEmpty else {
-            staleArtifactStatusMessage = plan.notes.first ?? "No stale/orphaned artifacts selected for cleanup."
+            staleArtifactStatusMessage = plan.notes.first ?? "No stale or orphaned simulator items are selected for cleanup."
             return
         }
 
         isExecuting = true
-        staleArtifactStatusMessage = "Executing stale/orphaned artifact cleanup..."
+        staleArtifactStatusMessage = "Cleaning selected stale or orphaned simulator items..."
         let executor = cleanupExecutor
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -192,7 +192,7 @@ final class InventoryViewModel: ObservableObject {
                 if let skippedReason = executionReport.skippedReason {
                     self.staleArtifactStatusMessage = skippedReason
                 } else {
-                    self.staleArtifactStatusMessage = "Stale/orphaned cleanup complete. Reclaimed \(ByteCountFormatter.string(fromByteCount: executionReport.totalReclaimedBytes, countStyle: .file))."
+                    self.staleArtifactStatusMessage = "Stale or orphaned simulator cleanup complete. Reclaimed \(ByteCountFormatter.string(fromByteCount: executionReport.totalReclaimedBytes, countStyle: .file))."
                 }
                 self.isExecuting = false
                 self.reload()

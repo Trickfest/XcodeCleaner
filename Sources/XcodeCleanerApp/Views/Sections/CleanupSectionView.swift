@@ -224,7 +224,7 @@ struct CleanupSectionView: View {
 
             Text("Categories")
                 .font(.callout.weight(.medium))
-            Text("Choose the broad cleanup areas you want to include. Xcode app removal and physical device support directories are handled in the itemized sections below.")
+            Text("Choose the broad cleanup areas you want to include. Xcode app removal and physical device support directories are handled as individual selections below.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             ForEach(snapshot.storage.categories.filter { category in
@@ -240,6 +240,15 @@ struct CleanupSectionView: View {
                             Text(AppPresentation.cleanupCategoryAffectedRootsText(for: category.kind))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                            if !category.paths.isEmpty {
+                                Text("Current roots in this scan:")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Text(category.paths.joined(separator: "\n"))
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                            }
                         }
                         Spacer()
                         Text(AppPresentation.formatBytes(category.bytes))
@@ -250,9 +259,9 @@ struct CleanupSectionView: View {
             }
 
             if !cleanupEligibleFootprintComponents.isEmpty {
-                Text("Explicit Opt-In Cleanup")
+                Text("Additional Cleanup Options")
                     .font(.callout.weight(.medium))
-                Text("These cleanup options are available on purpose, but they are not included in the default-safe selection.")
+                Text("These options are available on purpose, but they stay out of the default cleanup selection.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -285,14 +294,14 @@ struct CleanupSectionView: View {
 
             Text("Simulator Artifacts")
                 .font(.callout.weight(.medium))
-            Text("CoreSimulator runtimes and per-device data. Stale items are marked inline.")
+            Text("Registered simulator runtimes and devices. The separate stale/orphaned section below covers leftover simulator items that need extra review.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("Simulator Runtimes")
                     .font(.callout.weight(.medium))
-                Text("Deletes selected known runtimes via simctl. Blocked while the Simulator app or booted devices are running.")
+                Text("Deletes selected installed simulator runtimes through simctl. Blocked while the Simulator app or booted simulator devices are running.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -327,7 +336,7 @@ struct CleanupSectionView: View {
                                     .foregroundStyle(.secondary)
                                     .textSelection(.enabled)
                                 if let bundlePath = runtime.bundlePath {
-                                    Text(bundlePath)
+                                    Text("Bundle path: \(bundlePath)")
                                         .font(.caption.monospaced())
                                         .foregroundStyle(.secondary)
                                         .textSelection(.enabled)
@@ -355,7 +364,7 @@ struct CleanupSectionView: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("Simulator Devices")
                     .font(.callout.weight(.medium))
-                Text("Deletes selected registered simulator devices via simctl, including their apps/files/state, but not simulator runtimes or caches.")
+                Text("Deletes selected registered simulator devices through simctl, including their apps, files, and simulator state, but not simulator runtimes or shared caches.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -402,6 +411,10 @@ struct CleanupSectionView: View {
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                 Text("UDID: \(device.udid)")
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                                Text("Data path: \(device.dataPath)")
                                     .font(.caption.monospaced())
                                     .foregroundStyle(.secondary)
                                     .textSelection(.enabled)
@@ -454,7 +467,7 @@ struct CleanupSectionView: View {
                 Text("Physical Device Support Directories")
                     .font(.callout.weight(.medium))
             }
-            Text("Real-device debug/symbol caches under iOS DeviceSupport (not simulator data). Deleting selected folders removes only those caches; Xcode regenerates them when matching devices reconnect (first debug may be slower).")
+            Text("Real-device debug and symbol caches under ~/Library/Developer/Xcode/iOS DeviceSupport. These are not simulator files. Deleting selected folders removes only those caches; Xcode rebuilds them when matching devices connect again.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             if snapshot.physicalDeviceSupportDirectories.isEmpty {
@@ -511,7 +524,7 @@ struct CleanupSectionView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Stale And Orphaned Simulator Artifacts")
                         .font(.headline)
-                    Text("Explicit leftover simulator artifacts. Nothing is preselected; review and opt in before cleanup. Orphaned simulator runtimes are report-only.")
+                    Text("These are leftover simulator items that the current scan flagged as stale or orphaned. Nothing is selected by default. Orphaned simulator runtimes are report-only.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -530,7 +543,7 @@ struct CleanupSectionView: View {
 
             if !report.notes.isEmpty {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Detection notes")
+                    Text("Scan notes")
                         .font(.callout.weight(.medium))
                     ForEach(Array(report.notes.enumerated()), id: \.offset) { _, note in
                         Text(note)
@@ -596,9 +609,9 @@ struct CleanupSectionView: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 10) {
-                Text("Dedicated Cleanup")
+                Text("Clean Selected Items")
                     .font(.subheadline.weight(.semibold))
-                Text("Uses the execute options above and runs through the dedicated simulator stale-artifact cleanup path rather than the normal cleanup plan.")
+                Text("Uses the same safety options shown above, but applies only to the stale or orphaned simulator items in this section.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -621,12 +634,12 @@ struct CleanupSectionView: View {
                         HStack(spacing: 8) {
                             ProgressView()
                                 .controlSize(.small)
-                            Text("Executing stale/orphaned simulator cleanup...")
+                            Text("Cleaning selected stale or orphaned simulator items...")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     } else if executeBlockedByRunningTools {
-                        Text("Stale/orphaned simulator cleanup is blocked while tools are running (Xcode: \(runningXcodeInstances), Simulator app: \(runningSimulatorAppInstances), booted devices: \(bootedSimulatorDeviceCount)). Close tools or disable the block option above.")
+                        Text("Cleanup for these simulator items is blocked while tools are running (Xcode: \(runningXcodeInstances), Simulator app: \(runningSimulatorAppInstances), booted devices: \(bootedSimulatorDeviceCount)). Close the tools, or disable the block option above.")
                             .font(.caption)
                             .foregroundStyle(.orange)
                     } else {

@@ -7,6 +7,6 @@ Last updated: 2026-03-18
 
 ## Next Milestones
 
-- [ ] Do a post-packaging GUI QA and documentation pass.
+- [x] Do a post-packaging GUI QA and documentation pass.
 - [ ] Make the repository public on GitHub.
 - [ ] Finish post-1.0 cleanup and release follow-through.

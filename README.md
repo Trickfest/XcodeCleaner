@@ -97,9 +97,9 @@ Prebuilt signed/notarized distribution is optional future work, not a current re
 
 ## Total Xcode Footprint
 
-`Total Xcode Footprint` means the standard Xcode/CoreSimulator-managed storage currently counted by this build on this Mac. It is intended to answer "how much disk space is Xcode-related tooling using here?", not "what can the app safely delete right now?"
+`Total Xcode Footprint` adds up the Xcode and CoreSimulator storage roots this build currently knows how to measure on your Mac. It is intended to answer "how much disk space is Xcode-related tooling using here?", not "what can the app safely delete right now?"
 
-Currently counted in this build:
+Currently included in this build:
 
 - Xcode application bundles
 - Derived Data
@@ -121,7 +121,7 @@ Not counted:
 - External Xcode preference and saved-state locations such as `~/Library/Preferences` and `~/Library/Saved Application State`
 - Project source trees, repositories, and arbitrary package checkouts outside standard Xcode/CoreSimulator-managed roots
 
-Counted does not imply cleanable. Some roots contribute to the total footprint even when they are not exposed as cleanup targets in the current app build.
+Being counted in the total does not automatically make something removable in the app. Some roots contribute to the total footprint even when they are not exposed as cleanup targets in the current app build.
 
 ## GUI Workflow
 
@@ -129,12 +129,14 @@ The current macOS app is organized into four workflow sections in the sidebar.
 
 ### Overview
 
-- Runtime telemetry summary with running Xcode count, running Simulator app count, stale runtime count, and stale device count.
+- Tool activity summary with running Xcode count, running Simulator app count, stale runtime count, and stale device count.
 - Orphaned simulator runtime reporting, including on-disk paths for manual cleanup when detected.
 - Storage overview cards for every scanned category, including path lists, ownership summaries, and safety classification.
+- Additional counted Xcode storage cards for roots that contribute to `Total Xcode Footprint` but may be counted-only or explicit opt-in cleanup.
+- Total-footprint help popover describing what is currently included, what is not included, and which counted roots are cleanup-eligible.
 - Xcode install inventory with active/running badges, version/build metadata, and install paths.
 - Active Xcode switch panel with a target picker, action button, and last switch result/status.
-- Simulator inventory with separate runtime and device lists, including stale labels, availability, size, and path/identifier metadata.
+- Simulator inventory with separate runtime and device lists, including stale labels, availability, size, runtime bundle paths, and device data paths.
 
 ### Cleanup
 
@@ -147,16 +149,18 @@ The current macOS app is organized into four workflow sections in the sidebar.
   - `MobileDevice Crash Logs`
   - `Archives`
   - `Simulator Data`
-- Explicit opt-in cleanup for:
+- Inline `Affects:` summaries and current resolved roots for aggregate cleanup categories.
+- Additional Cleanup Options for:
   - `DocumentationCache`
   - `Xcode Logs`
   - `CoreSimulator Logs`
 - Itemized selection for:
-  - Simulator runtimes
-  - Simulator devices
+  - Simulator runtimes, including bundle paths
+  - Simulator devices, including data paths
   - Xcode installs
   - Physical device support directories
 - Inline stale markers for simulator runtimes and devices.
+- Separate stale/orphaned simulator review card with nothing selected by default and manual-only orphaned runtime reporting.
 - Cleanup execution status and the latest execution report.
 
 ### Automation
@@ -174,8 +178,10 @@ The current macOS app is organized into four workflow sections in the sidebar.
   - Schedule in hours (or manual-only)
   - Minimum age threshold
   - Minimum reclaim threshold
-  - Category selection
+  - Aggregate category selection only
   - Skip-if-tools-running and direct-delete toggles
+- Automation intentionally does not cover explicit opt-in roots such as `DocumentationCache`, `Xcode Logs`, or `CoreSimulator Logs`.
+- Automation also does not cover stale/orphaned simulator cleanup or itemized cleanup targets such as simulator runtimes, simulator devices, Xcode installs, or physical device support directories.
 - Shortcut to the Reports section for exports and historical reporting.
 
 ### Reports
@@ -188,7 +194,7 @@ The current macOS app is organized into four workflow sections in the sidebar.
   - Automation history CSV
   - Automation trends JSON
   - Automation trends CSV
-- The latest cleanup execution report, mirrored from the cleanup workflow.
+- The latest standard cleanup execution report and the latest stale/orphaned simulator cleanup report, mirrored from the cleanup workflow.
 
 ## Quick Start
 
@@ -422,9 +428,10 @@ The command verifies the resulting active developer directory after `xcode-selec
 - GUI intentionally does not expose aggregate cleanup toggles for:
   - `Xcode Applications`
   - Aggregate `Device Support`
-- GUI automation policy creation follows the same category list and therefore also excludes aggregate `xcodeApplications` and aggregate `deviceSupport`.
+- GUI automation policy creation is limited to aggregate cleanup categories and therefore excludes aggregate `xcodeApplications`, aggregate `deviceSupport`, explicit opt-in cleanup roots, stale/orphaned simulator cleanup, and itemized cleanup targets.
 - CLI dry-run/execute selectors currently support:
   - `--plan-category <kind>`
+  - `--plan-counted-component <kind>` for explicit opt-in cleanup roots such as `documentationCache`, `xcodeLogs`, and `coreSimulatorLogs`
   - `--plan-simulator-device <udid>`
   - `--plan-xcode-install <path>`
 - Current GUI/CLI parity gaps to be aware of:

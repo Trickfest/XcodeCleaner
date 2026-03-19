@@ -66,7 +66,7 @@ public enum CleanupPolicies {
                 guardrail: .xcodeStopped,
                 deletionMechanism: .filesystem,
                 cleanupDescription: "Deletes the selected Xcode app bundles.",
-                affectedRootsSummary: "Xcode app bundles discovered in standard install locations such as /Applications.",
+                affectedRootsSummary: "Xcode app bundles discovered in standard install locations such as /Applications and ~/Applications",
                 footprintDescription: "Xcode application bundles discovered in standard install locations."
             )
         case .derivedData:
@@ -87,7 +87,7 @@ public enum CleanupPolicies {
                 surface: .optional,
                 guardrail: .none,
                 deletionMechanism: .filesystem,
-                cleanupDescription: "Deletes crash and log capture history from connected physical devices.",
+                cleanupDescription: "Deletes crash logs and log captures from connected physical devices.",
                 affectedRootsSummary: "~/Library/Logs/CrashReporter/MobileDevice",
                 footprintDescription: "MobileDevice crash logs under ~/Library/Logs/CrashReporter/MobileDevice."
             )
@@ -97,7 +97,7 @@ public enum CleanupPolicies {
                 surface: .defaultSafe,
                 guardrail: .none,
                 deletionMechanism: .filesystem,
-                cleanupDescription: "Deletes archived app builds saved by Xcode.",
+                cleanupDescription: "Deletes archived app builds stored by Xcode.",
                 affectedRootsSummary: "~/Library/Developer/Xcode/Archives",
                 footprintDescription: "Archives under ~/Library/Developer/Xcode/Archives.",
                 defaultSelectedInGUI: true,
@@ -109,7 +109,7 @@ public enum CleanupPolicies {
                 surface: .optional,
                 guardrail: .xcodeStopped,
                 deletionMechanism: .filesystem,
-                cleanupDescription: "Deletes physical device support directories used for on-device debugging.",
+                cleanupDescription: "Deletes real-device support caches used for on-device debugging. Xcode recreates them when matching devices connect again.",
                 affectedRootsSummary: "~/Library/Developer/Xcode/iOS DeviceSupport",
                 footprintDescription: "Physical device support directories under ~/Library/Developer/Xcode/iOS DeviceSupport.",
                 defaultSelectedInPlanningDefaults: true
@@ -120,8 +120,8 @@ public enum CleanupPolicies {
                 surface: .optional,
                 guardrail: .simulatorStopped,
                 deletionMechanism: .mixed,
-                cleanupDescription: "Deletes simulator devices, simulator caches, and installed simulator runtimes from CoreSimulator storage.",
-                affectedRootsSummary: "~/Library/Developer/CoreSimulator and /Library/Developer/CoreSimulator",
+                cleanupDescription: "Deletes simulator devices, simulator caches, and installed simulator runtimes tracked in CoreSimulator storage.",
+                affectedRootsSummary: "~/Library/Developer/CoreSimulator/Devices, ~/Library/Developer/CoreSimulator/Caches, and installed runtime locations under /Library/Developer/CoreSimulator",
                 footprintDescription: "CoreSimulator device data, runtime bundles, and simulator caches."
             )
         }
@@ -146,7 +146,7 @@ public enum CleanupPolicies {
                 surface: .countedOnly,
                 guardrail: .none,
                 deletionMechanism: .manualOnly,
-                cleanupDescription: "Counted in Total Xcode Footprint only in this build.",
+                cleanupDescription: "Included in Total Xcode Footprint only in this build.",
                 affectedRootsSummary: "~/Library/Developer/Packages",
                 footprintDescription: "Developer packages under ~/Library/Developer/Packages."
             )
@@ -156,7 +156,7 @@ public enum CleanupPolicies {
                 surface: .explicitOptIn,
                 guardrail: .xcodeStopped,
                 deletionMechanism: .filesystem,
-                cleanupDescription: "Deletes Xcode log and result history. Keep these logs if you still need recent diagnostics.",
+                cleanupDescription: "Deletes Xcode logs and result history stored outside DerivedData. Keep them if you still need recent diagnostics.",
                 affectedRootsSummary: "~/Library/Logs/Xcode",
                 footprintDescription: "Xcode logs under ~/Library/Logs/Xcode."
             )
@@ -172,21 +172,21 @@ public enum CleanupPolicies {
             )
         case .dvtDownloads:
             return CleanupPolicy(
-                title: "DVTDownloads",
+                title: "Developer Tool Downloads",
                 surface: .countedOnly,
                 guardrail: .none,
                 deletionMechanism: .manualOnly,
-                cleanupDescription: "Counted in Total Xcode Footprint only in this build.",
+                cleanupDescription: "Included in Total Xcode Footprint only in this build.",
                 affectedRootsSummary: "~/Library/Developer/DVTDownloads",
                 footprintDescription: "Developer tool downloads under ~/Library/Developer/DVTDownloads."
             )
         case .xcpgDevices:
             return CleanupPolicy(
-                title: "XCPG Devices",
+                title: "Playground Device Set",
                 surface: .countedOnly,
                 guardrail: .none,
                 deletionMechanism: .manualOnly,
-                cleanupDescription: "Counted in Total Xcode Footprint only in this build.",
+                cleanupDescription: "Included in Total Xcode Footprint only in this build.",
                 affectedRootsSummary: "~/Library/Developer/XCPGDevices",
                 footprintDescription: "Xcode Playground/CoreSimulator device-set state under ~/Library/Developer/XCPGDevices."
             )
@@ -196,7 +196,7 @@ public enum CleanupPolicies {
                 surface: .countedOnly,
                 guardrail: .none,
                 deletionMechanism: .manualOnly,
-                cleanupDescription: "Counted in Total Xcode Footprint only in this build.",
+                cleanupDescription: "Included in Total Xcode Footprint only in this build.",
                 affectedRootsSummary: "~/Library/Developer/XCTestDevices",
                 footprintDescription: "XCTest device-set state under ~/Library/Developer/XCTestDevices."
             )
@@ -206,7 +206,7 @@ public enum CleanupPolicies {
                 surface: .countedOnly,
                 guardrail: .none,
                 deletionMechanism: .manualOnly,
-                cleanupDescription: "Counted in Total Xcode Footprint only in this build.",
+                cleanupDescription: "Included in Total Xcode Footprint only in this build.",
                 affectedRootsSummary: "~/Library/Developer/Xcode",
                 footprintDescription: "Additional standard Xcode-managed state under ~/Library/Developer/Xcode, such as UserData, DocumentationIndex, and Xcode mapping files."
             )
@@ -221,7 +221,7 @@ public enum CleanupPolicies {
                 surface: .explicitOptIn,
                 guardrail: .simulatorStopped,
                 deletionMechanism: .simctl,
-                cleanupDescription: "Deletes simulator runtimes that are no longer needed by current simulator devices.",
+                cleanupDescription: "Deletes simulator runtimes that are no longer needed by the devices in the current simulator inventory.",
                 affectedRootsSummary: "Installed simulator runtime bundle paths reported by simctl."
             )
         case .orphanedSimulatorRuntime:

@@ -581,12 +581,12 @@ func printUsage(toStandardError: Bool = false) {
     let countedComponentValues = CleanupPolicies.explicitOptInCountedFootprintComponentKinds.map(\.rawValue).joined(separator: ", ")
     let categorySemantics = StorageCategoryKind.allCases.map { kind in
         let policy = CleanupPolicies.policy(for: kind)
-        return "  - \(kind.rawValue): \(policy.cleanupDescription) Affects: \(policy.affectedRootsSummary)."
+        return "  - \(kind.rawValue): \(policy.cleanupDescription) Affects: \(policy.affectedRootsSummary)"
     }
     .joined(separator: "\n")
     let countedComponentSemantics = CleanupPolicies.explicitOptInCountedFootprintComponentKinds.map { kind in
         let policy = CleanupPolicies.policy(for: kind)
-        return "  - \(kind.rawValue): \(policy.cleanupDescription) Affects: \(policy.affectedRootsSummary)."
+        return "  - \(kind.rawValue): \(policy.cleanupDescription) Affects: \(policy.affectedRootsSummary)"
     }
     .joined(separator: "\n")
     let usage = """
@@ -599,14 +599,14 @@ func printUsage(toStandardError: Bool = false) {
       --no-progress                  Suppress progress output
       --dry-run                      Output dry-run plan JSON instead of snapshot JSON
       --execute                      Execute selected plan and output execution report JSON
-      --list-stale-artifacts         Output stale/orphaned simulator candidate JSON
-      --clean-stale-artifacts        Execute cleanup for cleanable stale/orphaned simulator artifacts (all by default)
+      --list-stale-artifacts         Output stale or orphaned simulator artifact JSON
+      --clean-stale-artifacts        Clean stale simulator runtimes and orphaned simulator device data (all cleanable candidates by default)
       --stale-artifact <id>          Include specific cleanable stale artifact candidate ID for cleanup
       --switch-active-xcode <path>   Switch active Xcode to the selected install path
       --allow-direct-delete          Allow direct delete fallback when move-to-trash fails (execute/clean-stale modes)
-      --skip-if-tools-running        Skip execute/clean-stale when Xcode or the Simulator app is currently running
+      --skip-if-tools-running        Skip cleanup when Xcode, the Simulator app, or booted simulator devices are running
       --plan-category <kind>         Include storage category in dry-run plan
-      --plan-counted-component <kind> Include explicit opt-in counted footprint component in dry-run plan
+      --plan-counted-component <kind> Include an explicit opt-in cleanup root in the plan
       --plan-simulator-device <udid> Include simulator device (UDID) in dry-run plan
       --plan-xcode-install <path>    Include specific Xcode app bundle path in plan
       --help                         Show this help message
@@ -625,11 +625,15 @@ func printUsage(toStandardError: Bool = false) {
     Opt-in counted footprint components:
       \(countedComponentValues)
 
-    Category semantics:
+    Cleanup scope details:
     \(categorySemantics)
 
-    Opt-in component semantics:
+    Additional opt-in cleanup roots:
     \(countedComponentSemantics)
+
+    Notes:
+      - --plan-category and --plan-counted-component can be mixed in the same dry-run or execute request.
+      - Stale-artifact cleanup never deletes orphaned simulator runtimes; they are reported for manual cleanup only.
     """
     if toStandardError {
         writeToStandardError("\(usage)\n")
@@ -652,7 +656,7 @@ func printAutomationUsage(toStandardError: Bool = false) {
     Notes:
       - If no categories are provided during create, safe defaults are used.
       - Supported categories: \(categoryValues)
-      - deviceSupport in automation/CLI is aggregate cleanup of all iOS DeviceSupport directories.
+      - deviceSupport in automation/CLI means aggregate cleanup of all iOS DeviceSupport directories.
       - Schedule:
         - Omit --every-hours for manual-only policy.
         - Provide --every-hours for scheduled policy cadence.

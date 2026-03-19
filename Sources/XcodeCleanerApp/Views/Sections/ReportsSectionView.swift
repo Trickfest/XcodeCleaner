@@ -8,7 +8,7 @@ struct ReportsSectionView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Reports")
                     .font(.headline)
-                Text("Centralized history, trend summaries, and export actions for automation and cleanup runs.")
+                Text("Review automation history, cleanup results, trend summaries, and exports in one place.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -44,8 +44,14 @@ struct ReportsSectionView: View {
                 ReportsExportsPanel(viewModel: viewModel)
 
                 if let report = viewModel.lastExecutionReport {
-                    ExecutionReportView(report: report)
-                } else {
+                    ExecutionReportView(title: "Last Cleanup Execution", report: report)
+                }
+
+                if let report = viewModel.lastStaleArtifactExecutionReport {
+                    ExecutionReportView(title: "Last Stale/Orphaned Simulator Cleanup", report: report)
+                }
+
+                if viewModel.lastExecutionReport == nil && viewModel.lastStaleArtifactExecutionReport == nil {
                     Text("No cleanup execution report available yet.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -65,6 +71,10 @@ struct ReportsSectionView: View {
                     .font(.caption.monospacedDigit())
                 if let report = viewModel.lastExecutionReport {
                     Text("Last cleanup reclaimed: \(AppPresentation.formatBytes(report.totalReclaimedBytes))")
+                        .font(.caption.monospacedDigit())
+                }
+                if let report = viewModel.lastStaleArtifactExecutionReport {
+                    Text("Last stale/orphaned cleanup reclaimed: \(AppPresentation.formatBytes(report.totalReclaimedBytes))")
                         .font(.caption.monospacedDigit())
                 }
             }

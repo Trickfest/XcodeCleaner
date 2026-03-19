@@ -17,7 +17,7 @@ struct AutomationSectionView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Automation Center")
                     .font(.headline)
-                Text("Manage policy lifecycle, execution, and reporting in one workflow-focused section.")
+                Text("Create, run, and review scheduled cleanup policies in one place.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -88,7 +88,7 @@ struct AutomationSectionView: View {
             .padding(8)
             .background(AppPresentation.color(for: statusTone).opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
 
-            Text("Scheduling note: missed intervals do not queue. If a policy is overdue, \"Run Due Policies Now\" evaluates it once and then schedules from the latest evaluation run.")
+            Text("Scheduling note: missed intervals do not queue up. If a policy is overdue, \"Run Due Policies Now\" evaluates it once and then schedules from that latest run.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
 
@@ -225,7 +225,7 @@ struct AutomationSectionView: View {
             Text("Categories")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
-            Text("Aggregate Xcode Applications and device support cleanup are CLI-only; GUI policies use explicit cleanup scope selection.")
+            Text("Automation covers only the aggregate cleanup categories listed here. It does not include explicit opt-in roots such as Documentation Cache or logs, stale/orphaned simulator cleanup, itemized cleanup targets, aggregate Xcode app cleanup, or aggregate device support cleanup.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
             ForEach(
@@ -259,7 +259,7 @@ struct AutomationSectionView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Reporting and Exports")
                 .font(.subheadline.weight(.semibold))
-            Text("Run history, trend summaries, and export actions are now centralized in the Reports section.")
+            Text("Open Reports to review run history, trend summaries, and export actions.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Button("Open Reports Section") {

@@ -121,6 +121,7 @@ struct AutomationPoliciesTests {
         #expect(record.advancesSchedule == true)
         #expect(record.totalReclaimedBytes == 256)
         #expect(record.executionReport?.succeededCount == 1)
+        #expect(record.message == "Run complete. Reclaimed 256 bytes.")
     }
 
     @Test("Automation runner enforces min total reclaim and min age thresholds")

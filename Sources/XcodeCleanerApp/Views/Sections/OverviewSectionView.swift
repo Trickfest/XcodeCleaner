@@ -40,7 +40,7 @@ struct OverviewSectionView: View {
         }.count
 
         return VStack(alignment: .leading, spacing: 6) {
-            Text("Runtime Telemetry")
+            Text("Tool Activity")
                 .font(.headline)
             HStack(spacing: 12) {
                 Text("Running Xcode instances: \(snapshot.runtimeTelemetry.totalXcodeRunningInstances)")
@@ -51,6 +51,9 @@ struct OverviewSectionView: View {
             }
             .font(.callout.monospacedDigit())
             .foregroundStyle(.secondary)
+            Text("These counts help explain why some cleanup actions may be blocked.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -105,9 +108,9 @@ struct OverviewSectionView: View {
 
             if !additionalFootprintComponents.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Additional Xcode Footprint Components")
+                    Text("Additional Counted Xcode Storage")
                         .font(.subheadline.weight(.semibold))
-                    Text("These components contribute to Total Xcode Footprint. Some are explicit opt-in cleanup targets; others are counted only in this build.")
+                    Text("These roots increase Total Xcode Footprint. Some are available as extra cleanup options; others are included for accounting only.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
@@ -153,7 +156,7 @@ struct OverviewSectionView: View {
                 .foregroundStyle(.secondary)
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("Currently counted in this build")
+                Text("Currently included in this build")
                     .font(.subheadline.weight(.semibold))
                 ForEach(
                     Array(AppPresentation.totalFootprintIncludedItems(for: snapshot.storage).enumerated()),
@@ -185,7 +188,7 @@ struct OverviewSectionView: View {
 
     private var installInventoryView: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Detected Xcode installs: \(snapshot.installs.count)")
+            Text("Installed Xcode Apps: \(snapshot.installs.count)")
                 .font(.headline)
 
             if let activePath = snapshot.activeDeveloperDirectoryPath {
@@ -263,7 +266,7 @@ struct OverviewSectionView: View {
             !viewModel.isExecuting
 
         return VStack(alignment: .leading, spacing: 10) {
-            Text("Active Xcode Switch")
+            Text("Switch Active Xcode")
                 .font(.subheadline.weight(.semibold))
 
             if snapshot.installs.isEmpty {
@@ -298,7 +301,7 @@ struct OverviewSectionView: View {
                     .foregroundStyle(.secondary)
 
                 if let switchResult = viewModel.lastXcodeSwitchResult {
-                    Text("Result: \(switchResult.status.rawValue) | New active: \(switchResult.newActiveDeveloperDirectoryPath ?? "Unknown")")
+                    Text("Result: \(AppPresentation.activeXcodeSwitchStatusLabel(switchResult.status)) | New active: \(switchResult.newActiveDeveloperDirectoryPath ?? "Unknown")")
                         .font(.caption.monospaced())
                         .foregroundStyle(AppPresentation.color(for: switchResult.status))
                 }
@@ -331,8 +334,11 @@ struct OverviewSectionView: View {
             Text("Devices: \(snapshot.simulator.devices.count), Runtimes: \(snapshot.simulator.runtimes.count), Stale devices: \(staleDeviceCount), Stale runtimes: \(staleRuntimeCount), Orphaned simulator artifacts: \(orphanedSimulatorArtifactCount)")
                 .font(.callout.monospacedDigit())
                 .foregroundStyle(.secondary)
+            Text("This section shows the current simulator inventory plus orphaned runtime paths that require manual cleanup.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
             if !orphanedRuntimeCandidates.isEmpty {
-                Text("Orphaned simulator runtimes are reported here for manual cleanup; the app does not delete them.")
+                Text("Orphaned simulator runtimes are reported here for manual cleanup. This app does not delete them.")
                     .font(.caption)
                     .foregroundStyle(.orange)
             } else if orphanedSimulatorArtifactCount > 0 {
@@ -361,7 +367,7 @@ struct OverviewSectionView: View {
                             .font(.caption.monospaced())
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
-                        Text("Manual cleanup only")
+                        Text("Manual cleanup required")
                             .font(.caption.monospaced())
                             .foregroundStyle(.orange)
                     }
@@ -399,7 +405,7 @@ struct OverviewSectionView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     if let bundlePath = runtime.bundlePath {
-                        Text(bundlePath)
+                        Text("Bundle path: \(bundlePath)")
                             .font(.caption.monospaced())
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
@@ -456,7 +462,7 @@ struct OverviewSectionView: View {
                     Text("UDID: \(device.udid)")
                         .font(.caption.monospaced())
                         .foregroundStyle(.secondary)
-                    Text(device.dataPath)
+                    Text("Data path: \(device.dataPath)")
                         .font(.caption.monospaced())
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)

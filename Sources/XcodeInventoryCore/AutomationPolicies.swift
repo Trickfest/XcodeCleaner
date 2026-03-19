@@ -335,7 +335,7 @@ public struct AutomationPolicyRunner: @unchecked Sendable {
             finishedAt: now(),
             status: status,
             skippedReason: nil,
-            message: "Run complete. Reclaimed \(executionReport.totalReclaimedBytes) bytes.",
+            message: "Run complete. Reclaimed \(ByteCountFormatter.string(fromByteCount: executionReport.totalReclaimedBytes, countStyle: .file)).",
             totalReclaimedBytes: executionReport.totalReclaimedBytes,
             advancesSchedule: status == .executed,
             executionReport: executionReport

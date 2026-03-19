@@ -17,7 +17,42 @@ enum AppPresentation {
         let version = bundleVersion?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .nonEmptyValue ?? fallbackVersion
-        return "Version \(version)"
+        guard let buildTimestamp = currentBuildTimestampDisplay() else {
+            return "Version \(version)"
+        }
+        return "Version \(version) • Build: \(buildTimestamp)"
+    }
+
+    private static func currentBuildTimestampDisplay(
+        bundle: Bundle = .main,
+        fileManager: FileManager = .default
+    ) -> String? {
+        guard let buildDate = currentBuildDate(bundle: bundle, fileManager: fileManager) else {
+            return nil
+        }
+        return buildTimestampFormatter.string(from: buildDate)
+    }
+
+    private static func currentBuildDate(
+        bundle: Bundle,
+        fileManager: FileManager
+    ) -> Date? {
+        let candidateURLs: [URL] = [
+            bundle.executableURL,
+            bundle.bundleURL.appendingPathComponent("Contents/Info.plist", isDirectory: false),
+            bundle.bundleURL,
+        ]
+        .compactMap { $0 }
+
+        for url in candidateURLs {
+            let resolvedURL = url.standardizedFileURL.resolvingSymlinksInPath()
+            guard let attributes = try? fileManager.attributesOfItem(atPath: resolvedURL.path),
+                  let modifiedAt = attributes[.modificationDate] as? Date else {
+                continue
+            }
+            return modifiedAt
+        }
+        return nil
     }
 
     static func title(for kind: StorageCategoryKind) -> String {
@@ -33,11 +68,11 @@ enum AppPresentation {
     }
 
     static var totalFootprintDefinition: String {
-        "Total Xcode Footprint is the sum of the standard Xcode and CoreSimulator storage roots currently counted by this build."
+        "Total Xcode Footprint adds up the Xcode and CoreSimulator storage roots this build currently knows how to measure on your Mac."
     }
 
     static var totalFootprintCleanupNote: String {
-        "Counted roots are not automatically cleanup targets. Cleanup support is tracked separately and is narrower than footprint accounting."
+        "Being counted in the total does not automatically make something removable in this app. Cleanup support is narrower than footprint accounting."
     }
 
     static var totalFootprintExcludedItems: [String] {
@@ -68,14 +103,14 @@ enum AppPresentation {
     }
 
     static var countedOnlyFootprintComponentNote: String {
-        "Counted only in total footprint; not a normal cleanup target in this build."
+        "Included in the total footprint only; not removable in this build."
     }
 
     static func additionalFootprintComponentNote(
         for kind: CountedFootprintComponentKind
     ) -> String {
         if CleanupPolicies.policy(for: kind).surface == .explicitOptIn {
-            return "Available as explicit opt-in cleanup; not part of the default-safe cleanup set."
+            return "Available as an extra cleanup option; never included in the default cleanup selection."
         }
         return countedOnlyFootprintComponentNote
     }
@@ -214,7 +249,7 @@ enum AppPresentation {
     static func staleArtifactActionHint(for kind: StaleArtifactKind) -> String? {
         switch kind {
         case .orphanedSimulatorRuntime:
-            return "Manual cleanup only. The app reports the path but does not delete orphaned runtimes."
+            return "Manual cleanup only. The app reports the path but does not delete orphaned simulator runtimes."
         case .simulatorRuntime, .orphanedSimulatorDevice:
             return nil
         }
@@ -241,15 +276,72 @@ enum AppPresentation {
     static func cleanupOperationLabel(_ operation: CleanupOperation) -> String {
         switch operation {
         case .moveToTrash:
-            return "moveToTrash"
+            return "Moved to Trash"
         case .directDelete:
-            return "directDelete"
+            return "Direct delete"
         case .simctlDelete:
-            return "simctlDelete"
+            return "simctl delete"
         case .mixed:
-            return "mixed"
+            return "Mixed"
         case .none:
-            return "none"
+            return "None"
+        }
+    }
+
+    static func cleanupActionStatusLabel(_ status: CleanupActionStatus) -> String {
+        switch status {
+        case .succeeded:
+            return "Succeeded"
+        case .partiallySucceeded:
+            return "Partially succeeded"
+        case .blocked:
+            return "Blocked"
+        case .failed:
+            return "Failed"
+        }
+    }
+
+    static func cleanupPathStatusLabel(_ status: CleanupPathStatus) -> String {
+        switch status {
+        case .succeeded:
+            return "Succeeded"
+        case .blocked:
+            return "Blocked"
+        case .failed:
+            return "Failed"
+        case .skippedMissing:
+            return "Skipped missing"
+        }
+    }
+
+    static func activeXcodeSwitchStatusLabel(_ status: ActiveXcodeSwitchStatus) -> String {
+        switch status {
+        case .succeeded:
+            return "Succeeded"
+        case .blocked:
+            return "Blocked"
+        case .failed:
+            return "Failed"
+        }
+    }
+
+    static func automationRunStatusLabel(_ status: AutomationRunStatus) -> String {
+        switch status {
+        case .executed:
+            return "EXECUTED"
+        case .skipped:
+            return "SKIPPED"
+        case .failed:
+            return "FAILED"
+        }
+    }
+
+    static func automationTriggerLabel(_ trigger: AutomationTrigger) -> String {
+        switch trigger {
+        case .manual:
+            return "Manual"
+        case .scheduled:
+            return "Scheduled"
         }
     }
 
@@ -414,6 +506,14 @@ enum AppPresentation {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
+        return formatter
+    }()
+
+    private static let buildTimestampFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = .autoupdatingCurrent
+        formatter.timeZone = .autoupdatingCurrent
+        formatter.dateFormat = "yyyy-MM-dd HH:mm z"
         return formatter
     }()
 

@@ -27,7 +27,7 @@ struct ExecutionReportView: View {
                         Text(result.item.title)
                             .font(.callout.weight(.medium))
                         Spacer()
-                        Text(result.status.rawValue)
+                        Text(AppPresentation.cleanupActionStatusLabel(result.status))
                             .font(.caption.monospaced())
                             .foregroundStyle(AppPresentation.color(for: result.status))
                         Text(AppPresentation.formatBytes(result.reclaimedBytes))
@@ -40,7 +40,7 @@ struct ExecutionReportView: View {
                         .foregroundStyle(.secondary)
 
                     ForEach(result.pathResults) { pathResult in
-                        Text("\(pathResult.status.rawValue): \(pathResult.path) (\(AppPresentation.cleanupOperationLabel(pathResult.operation)), \(AppPresentation.formatBytes(pathResult.reclaimedBytes)))")
+                        Text("\(AppPresentation.cleanupPathStatusLabel(pathResult.status)): \(pathResult.path) (\(AppPresentation.cleanupOperationLabel(pathResult.operation)), \(AppPresentation.formatBytes(pathResult.reclaimedBytes)))")
                             .font(.caption.monospaced())
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
