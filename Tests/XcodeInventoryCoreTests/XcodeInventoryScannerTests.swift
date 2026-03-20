@@ -848,6 +848,203 @@ struct XcodeInventoryScannerTests {
         ])
     }
 
+    @Test("Scanner emits incremental progress within long-running sizing phases")
+    func scannerProgressUpdatesIncrementallyWithinHeavyPhases() throws {
+        let sandbox = try TemporaryDirectory.make()
+        defer { sandbox.cleanup() }
+
+        let xcodeStable = try makeFakeXcodeApp(
+            in: sandbox.url,
+            name: "Xcode-26.2",
+            bundleIdentifier: "com.apple.dt.Xcode",
+            shortVersion: "26.2",
+            bundleVersion: "17B400",
+            xcodeBuild: "17B400"
+        )
+        let xcodeBeta = try makeFakeXcodeApp(
+            in: sandbox.url,
+            name: "Xcode-26.3-beta",
+            bundleIdentifier: "com.apple.dt.XcodeBeta",
+            shortVersion: "26.3",
+            bundleVersion: "17C500",
+            xcodeBuild: "17C500"
+        )
+
+        let fakeHome = sandbox.url.appendingPathComponent("fake-home", isDirectory: true)
+        let derivedDataPath = fakeHome
+            .appendingPathComponent("Library/Developer/Xcode/DerivedData", isDirectory: true)
+            .path
+        let archivesPath = fakeHome
+            .appendingPathComponent("Library/Developer/Xcode/Archives", isDirectory: true)
+            .path
+        let mobileDeviceCrashLogsPath = fakeHome
+            .appendingPathComponent("Library/Logs/CrashReporter/MobileDevice", isDirectory: true)
+            .path
+        let deviceSupportPath = fakeHome
+            .appendingPathComponent("Library/Developer/Xcode/iOS DeviceSupport", isDirectory: true)
+            .path
+        let documentationCachePath = fakeHome
+            .appendingPathComponent("Library/Developer/Xcode/DocumentationCache", isDirectory: true)
+            .path
+        let packagesPath = fakeHome
+            .appendingPathComponent("Library/Developer/Packages", isDirectory: true)
+            .path
+        let xcodeLogsPath = fakeHome
+            .appendingPathComponent("Library/Logs/Xcode", isDirectory: true)
+            .path
+        let coreSimulatorLogsPath = fakeHome
+            .appendingPathComponent("Library/Logs/CoreSimulator", isDirectory: true)
+            .path
+        let dvtDownloadsPath = fakeHome
+            .appendingPathComponent("Library/Developer/DVTDownloads", isDirectory: true)
+            .path
+        let xcpgDevicesPath = fakeHome
+            .appendingPathComponent("Library/Developer/XCPGDevices", isDirectory: true)
+            .path
+        let xcTestDevicesPath = fakeHome
+            .appendingPathComponent("Library/Developer/XCTestDevices", isDirectory: true)
+            .path
+        let userDataPath = fakeHome
+            .appendingPathComponent("Library/Developer/Xcode/UserData", isDirectory: true)
+            .path
+        let documentationIndexPath = fakeHome
+            .appendingPathComponent("Library/Developer/Xcode/DocumentationIndex", isDirectory: true)
+            .path
+        let sdkMappingPath = fakeHome
+            .appendingPathComponent("Library/Developer/Xcode/SDKToSimulatorIndexMapping.plist", isDirectory: false)
+            .path
+        let metalMappingPath = fakeHome
+            .appendingPathComponent("Library/Developer/Xcode/XcodeToMetalToolchainIndexMapping.plist", isDirectory: false)
+            .path
+        let simulatorCachesPath = fakeHome
+            .appendingPathComponent("Library/Developer/CoreSimulator/Caches", isDirectory: true)
+            .path
+        let systemSimulatorCachesPath = "/Library/Developer/CoreSimulator/Caches"
+        let runtime18BundlePath = "/Library/Developer/CoreSimulator/Volumes/iOS_23A8464/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 18.0.simruntime"
+        let runtime17BundlePath = "/Library/Developer/CoreSimulator/Volumes/iOS_23C54/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 17.0.simruntime"
+        let simulatorDevice1UDID = "SIM-DEVICE-1"
+        let simulatorDevice2UDID = "SIM-DEVICE-2"
+        let simulatorDevice3UDID = "SIM-DEVICE-3"
+        let simulatorDevice1Path = fakeHome
+            .appendingPathComponent("Library/Developer/CoreSimulator/Devices/\(simulatorDevice1UDID)", isDirectory: true)
+            .path
+        let simulatorDevice2Path = fakeHome
+            .appendingPathComponent("Library/Developer/CoreSimulator/Devices/\(simulatorDevice2UDID)", isDirectory: true)
+            .path
+        let simulatorDevice3Path = fakeHome
+            .appendingPathComponent("Library/Developer/CoreSimulator/Devices/\(simulatorDevice3UDID)", isDirectory: true)
+            .path
+        let deviceSupportDirectory1Path = fakeHome
+            .appendingPathComponent("Library/Developer/Xcode/iOS DeviceSupport/26.2 (23C54)", isDirectory: true)
+            .path
+        let deviceSupportDirectory2Path = fakeHome
+            .appendingPathComponent("Library/Developer/Xcode/iOS DeviceSupport/iPhone17,2 26.3 (23D127)", isDirectory: true)
+            .path
+
+        try FileManager.default.createDirectory(atPath: deviceSupportDirectory1Path, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(atPath: deviceSupportDirectory2Path, withIntermediateDirectories: true)
+
+        let scanner = XcodeInventoryScanner(
+            applicationDiscoverer: StubDiscoverer(urls: [xcodeStable, xcodeBeta]),
+            activeDeveloperDirectoryProvider: StubActiveDeveloperProvider(url: xcodeStable.appendingPathComponent("Contents/Developer", isDirectory: true)),
+            pathSizer: StubPathSizer(sizeByPath: [
+                xcodeStable.path: 1_000,
+                xcodeBeta.path: 1_200,
+                derivedDataPath: 300,
+                archivesPath: 200,
+                mobileDeviceCrashLogsPath: 50,
+                deviceSupportPath: 700,
+                documentationCachePath: 80,
+                packagesPath: 70,
+                xcodeLogsPath: 60,
+                coreSimulatorLogsPath: 55,
+                dvtDownloadsPath: 40,
+                xcpgDevicesPath: 30,
+                xcTestDevicesPath: 20,
+                userDataPath: 10,
+                documentationIndexPath: 9,
+                sdkMappingPath: 8,
+                metalMappingPath: 7,
+                simulatorCachesPath: 90,
+                systemSimulatorCachesPath: 91,
+                runtime18BundlePath: 450,
+                runtime17BundlePath: 350,
+                simulatorDevice1Path: 120,
+                simulatorDevice2Path: 110,
+                simulatorDevice3Path: 100,
+                deviceSupportDirectory1Path: 400,
+                deviceSupportDirectory2Path: 300,
+            ]),
+            homeDirectoryProvider: StubHomeDirectoryProvider(url: fakeHome),
+            runningApplicationsProvider: StubRunningApplicationsProvider(records: []),
+            simulatorListingProvider: StubSimulatorListingProvider(
+                listing: SimulatorListing(
+                    devices: [
+                        SimulatorDeviceListingRecord(
+                            udid: simulatorDevice1UDID,
+                            name: "iPhone 16 Pro",
+                            runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.iOS-18-0",
+                            state: "Shutdown",
+                            isAvailable: true
+                        ),
+                        SimulatorDeviceListingRecord(
+                            udid: simulatorDevice2UDID,
+                            name: "iPhone 15",
+                            runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.iOS-17-0",
+                            state: "Booted",
+                            isAvailable: true
+                        ),
+                        SimulatorDeviceListingRecord(
+                            udid: simulatorDevice3UDID,
+                            name: "iPad Pro",
+                            runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.iOS-18-0",
+                            state: "Shutdown",
+                            isAvailable: true
+                        ),
+                    ],
+                    runtimes: [
+                        SimulatorRuntimeListingRecord(
+                            identifier: "com.apple.CoreSimulator.SimRuntime.iOS-18-0",
+                            name: "iOS 18.0",
+                            version: "18.0",
+                            isAvailable: true,
+                            bundlePath: runtime18BundlePath
+                        ),
+                        SimulatorRuntimeListingRecord(
+                            identifier: "com.apple.CoreSimulator.SimRuntime.iOS-17-0",
+                            name: "iOS 17.0",
+                            version: "17.0",
+                            isAvailable: true,
+                            bundlePath: runtime17BundlePath
+                        ),
+                    ]
+                )
+            ),
+            now: { Date(timeIntervalSince1970: 300) }
+        )
+
+        var updates: [ScanProgress] = []
+        _ = scanner.scan { updates.append($0) }
+
+        let installUpdates = updates.filter { $0.phase == .sizingXcodeInstalls }
+        let inventoryUpdates = updates.filter { $0.phase == .buildingSimulatorInventory }
+        let storageUpdates = updates.filter { $0.phase == .sizingStorageCategories }
+
+        #expect(installUpdates.count >= 2)
+        #expect(inventoryUpdates.count > 2)
+        #expect(storageUpdates.count > 10)
+        #expect(inventoryUpdates.contains(where: { $0.message.contains("simulator runtime") }))
+        #expect(inventoryUpdates.contains(where: { $0.message.contains("simulator device") }))
+        #expect(storageUpdates.contains(where: { $0.message.contains("Simulator Data") }))
+        #expect(storageUpdates.contains(where: { $0.message.contains("Documentation Cache") }))
+        #expect(storageUpdates.contains(where: { $0.message.contains("device support directory") }))
+
+        for index in 1..<updates.count {
+            #expect(updates[index].fractionCompleted >= updates[index - 1].fractionCompleted)
+        }
+        #expect(updates.last?.fractionCompleted == 1)
+    }
+
     @Test("Dry-run planner returns exact path preview and reclaim estimate")
     func dryRunPlannerPreviewAndTotals() {
         let snapshot = makePlanningSnapshot()

@@ -128,6 +128,16 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
             progressHandler?(ScanProgress(phase: phase, fractionCompleted: fraction, message: message))
         }
 
+        func emitPhaseProgress(
+            _ phase: ScanPhase,
+            start: Double,
+            end: Double,
+            progress: Double,
+            message: String
+        ) {
+            emitProgress(phase, interpolatedProgress(start: start, end: end, progress: progress), message)
+        }
+
         emitProgress(.discoveringXcodeInstalls, 0.01, "Locating Xcode application bundles")
         let activeDeveloperDirectoryURL = activeDeveloperDirectoryProvider.activeDeveloperDirectoryURL()
         let activeDeveloperDirectoryPath = normalizedPath(for: activeDeveloperDirectoryURL)
@@ -144,8 +154,11 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
 
         let sizingInstallFractionStart = 0.10
         let sizingInstallFractionEnd = 0.35
-        var installs = discoveredApplications.enumerated()
-            .map { index, appURL -> XcodeInstall in
+        var installs: [XcodeInstall] = []
+        if discoveredApplications.isEmpty {
+            emitProgress(.sizingXcodeInstalls, sizingInstallFractionEnd, "No Xcode installs found")
+        } else {
+            for (index, appURL) in discoveredApplications.enumerated() {
                 let info = infoPlistReader.readInfoPlist(at: appURL)
                 let displayName = (info[InfoPlistKeys.bundleDisplayName] as? String)
                     ?? (info[InfoPlistKeys.bundleName] as? String)
@@ -160,27 +173,25 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
                 let installPath = normalizedPath(for: appURL) ?? appURL.path
                 let runningInstanceCount = xcodeRunningCountsByPath[installPath] ?? 0
 
-                return XcodeInstall(
-                    displayName: displayName,
-                    bundleIdentifier: bundleIdentifier,
-                    version: version,
-                    build: build,
-                    path: installPath,
-                    developerDirectoryPath: developerDirectoryPath,
-                    isActive: matchesActiveDeveloperDirectory(
-                        activeDeveloperDirectoryPath: activeDeveloperDirectoryPath,
-                        installDeveloperDirectoryPath: developerDirectoryPath
-                    ),
-                    runningInstanceCount: runningInstanceCount,
-                    sizeInBytes: pathSizer.allocatedSize(at: appURL),
-                    ownershipSummary: "Owned by this Xcode installation bundle",
-                    safetyClassification: .destructive
+                installs.append(
+                    XcodeInstall(
+                        displayName: displayName,
+                        bundleIdentifier: bundleIdentifier,
+                        version: version,
+                        build: build,
+                        path: installPath,
+                        developerDirectoryPath: developerDirectoryPath,
+                        isActive: matchesActiveDeveloperDirectory(
+                            activeDeveloperDirectoryPath: activeDeveloperDirectoryPath,
+                            installDeveloperDirectoryPath: developerDirectoryPath
+                        ),
+                        runningInstanceCount: runningInstanceCount,
+                        sizeInBytes: pathSizer.allocatedSize(at: appURL),
+                        ownershipSummary: "Owned by this Xcode installation bundle",
+                        safetyClassification: .destructive
+                    )
                 )
-            }
-        if discoveredApplications.isEmpty {
-            emitProgress(.sizingXcodeInstalls, sizingInstallFractionEnd, "No Xcode installs found")
-        } else {
-            for index in discoveredApplications.indices {
+
                 let progress = sizingInstallFractionStart
                     + (Double(index + 1) / Double(discoveredApplications.count))
                     * (sizingInstallFractionEnd - sizingInstallFractionStart)
@@ -209,7 +220,15 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
         emitProgress(.loadingSimulatorListing, 0.48, "Loaded simulator device/runtime listing")
 
         emitProgress(.buildingSimulatorInventory, 0.54, "Building simulator inventory records")
-        let simulatorInventory = buildSimulatorInventory(from: simulatorListing)
+        let simulatorInventory = buildSimulatorInventory(from: simulatorListing) { progress, message in
+            emitPhaseProgress(
+                .buildingSimulatorInventory,
+                start: 0.54,
+                end: 0.68,
+                progress: progress,
+                message: message
+            )
+        }
         emitProgress(
             .buildingSimulatorInventory,
             0.68,
@@ -217,8 +236,24 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
         )
 
         emitProgress(.sizingStorageCategories, 0.74, "Sizing storage categories")
-        let storage = buildStorageUsage(installs: installs, simulatorInventory: simulatorInventory)
-        let physicalDeviceSupportDirectories = buildPhysicalDeviceSupportDirectories(from: storage)
+        let storage = buildStorageUsage(installs: installs, simulatorInventory: simulatorInventory) { progress, message in
+            emitPhaseProgress(
+                .sizingStorageCategories,
+                start: 0.74,
+                end: 0.83,
+                progress: progress,
+                message: message
+            )
+        }
+        let physicalDeviceSupportDirectories = buildPhysicalDeviceSupportDirectories(from: storage) { progress, message in
+            emitPhaseProgress(
+                .sizingStorageCategories,
+                start: 0.83,
+                end: 0.86,
+                progress: progress,
+                message: message
+            )
+        }
         emitProgress(.sizingStorageCategories, 0.86, "Storage category sizing complete")
 
         emitProgress(.computingRuntimeTelemetry, 0.92, "Computing runtime telemetry")
@@ -248,7 +283,8 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
 
     private func buildStorageUsage(
         installs: [XcodeInstall],
-        simulatorInventory: SimulatorInventory
+        simulatorInventory: SimulatorInventory,
+        progressHandler: ((Double, String) -> Void)? = nil
     ) -> XcodeStorageUsage {
         let homeDirectoryURL = homeDirectoryProvider.homeDirectoryURL()
         let simulatorPaths = simulatorStoragePaths(
@@ -256,43 +292,43 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
             inventory: simulatorInventory
         )
 
-        let categories = [
-            makeCategory(
+        let categoryDefinitions: [(kind: StorageCategoryKind, title: String, paths: [URL], ownershipSummary: String, safetyClassification: SafetyClassification)] = [
+            (
                 kind: .xcodeApplications,
                 title: "Xcode Applications",
                 paths: installs.map { URL(filePath: $0.path, directoryHint: .isDirectory) },
                 ownershipSummary: "Owned by individual Xcode installation bundles",
                 safetyClassification: .destructive
             ),
-            makeCategory(
+            (
                 kind: .derivedData,
                 title: "Derived Data",
                 paths: [homeDirectoryURL.appendingPathComponent("Library/Developer/Xcode/DerivedData", isDirectory: true)],
                 ownershipSummary: "Owned by local project build artifacts",
                 safetyClassification: .regenerable
             ),
-            makeCategory(
+            (
                 kind: .mobileDeviceCrashLogs,
                 title: "MobileDevice Crash Logs",
                 paths: [homeDirectoryURL.appendingPathComponent("Library/Logs/CrashReporter/MobileDevice", isDirectory: true)],
                 ownershipSummary: "Owned by local crash and diagnostic logs captured from connected physical devices",
                 safetyClassification: .conditionallySafe
             ),
-            makeCategory(
+            (
                 kind: .archives,
                 title: "Archives",
                 paths: [homeDirectoryURL.appendingPathComponent("Library/Developer/Xcode/Archives", isDirectory: true)],
                 ownershipSummary: "Owned by archived local build outputs",
                 safetyClassification: .conditionallySafe
             ),
-            makeCategory(
+            (
                 kind: .deviceSupport,
                 title: "Device Support",
                 paths: [homeDirectoryURL.appendingPathComponent("Library/Developer/Xcode/iOS DeviceSupport", isDirectory: true)],
                 ownershipSummary: "Owned by local support files for connected devices",
                 safetyClassification: .regenerable
             ),
-            makeCategory(
+            (
                 kind: .simulatorData,
                 title: "Simulator Data",
                 paths: simulatorPaths,
@@ -300,6 +336,88 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
                 safetyClassification: .conditionallySafe
             ),
         ]
+
+        let componentDefinitions: [(kind: CountedFootprintComponentKind, title: String, paths: [URL], ownershipSummary: String)] = [
+            (
+                kind: .documentationCache,
+                title: "Documentation Cache",
+                paths: [homeDirectoryURL.appendingPathComponent("Library/Developer/Xcode/DocumentationCache", isDirectory: true)],
+                ownershipSummary: "Counted in total footprint only; owned by downloaded Xcode documentation caches."
+            ),
+            (
+                kind: .developerPackages,
+                title: "Developer Packages",
+                paths: [homeDirectoryURL.appendingPathComponent("Library/Developer/Packages", isDirectory: true)],
+                ownershipSummary: "Counted in total footprint only; owned by Apple developer support packages downloaded for Xcode."
+            ),
+            (
+                kind: .xcodeLogs,
+                title: "Xcode Logs",
+                paths: [homeDirectoryURL.appendingPathComponent("Library/Logs/Xcode", isDirectory: true)],
+                ownershipSummary: "Counted in total footprint only; owned by Xcode log and result history stored under ~/Library/Logs/Xcode."
+            ),
+            (
+                kind: .coreSimulatorLogs,
+                title: "CoreSimulator Logs",
+                paths: [homeDirectoryURL.appendingPathComponent("Library/Logs/CoreSimulator", isDirectory: true)],
+                ownershipSummary: "Counted in total footprint only; owned by CoreSimulator log history stored under ~/Library/Logs/CoreSimulator."
+            ),
+            (
+                kind: .dvtDownloads,
+                title: "DVTDownloads",
+                paths: [homeDirectoryURL.appendingPathComponent("Library/Developer/DVTDownloads", isDirectory: true)],
+                ownershipSummary: "Counted in total footprint only; owned by downloaded Xcode developer tool assets and components."
+            ),
+            (
+                kind: .xcpgDevices,
+                title: "XCPG Devices",
+                paths: [homeDirectoryURL.appendingPathComponent("Library/Developer/XCPGDevices", isDirectory: true)],
+                ownershipSummary: "Counted in total footprint only; owned by Xcode-managed Playground/CoreSimulator device-set state."
+            ),
+            (
+                kind: .xcTestDevices,
+                title: "XCTest Devices",
+                paths: [homeDirectoryURL.appendingPathComponent("Library/Developer/XCTestDevices", isDirectory: true)],
+                ownershipSummary: "Counted in total footprint only; owned by XCTest device-set state used by Xcode tooling."
+            ),
+            (
+                kind: .additionalXcodeState,
+                title: "Additional Xcode State",
+                paths: [
+                    homeDirectoryURL.appendingPathComponent("Library/Developer/Xcode/UserData", isDirectory: true),
+                    homeDirectoryURL.appendingPathComponent("Library/Developer/Xcode/DocumentationIndex", isDirectory: true),
+                    homeDirectoryURL.appendingPathComponent("Library/Developer/Xcode/SDKToSimulatorIndexMapping.plist", isDirectory: false),
+                    homeDirectoryURL.appendingPathComponent("Library/Developer/Xcode/XcodeToMetalToolchainIndexMapping.plist", isDirectory: false),
+                ],
+                ownershipSummary: "Counted in total footprint only; owned by smaller Xcode-managed state under ~/Library/Developer/Xcode."
+            ),
+        ]
+
+        let totalProgressUnits = categoryDefinitions.reduce(0) { partialResult, definition in
+            partialResult + progressUnitCount(for: definition.paths)
+        } + componentDefinitions.reduce(0) { partialResult, definition in
+            partialResult + progressUnitCount(for: definition.paths)
+        }
+        var processedProgressUnits = 0
+
+        let categories = categoryDefinitions.map { definition in
+            makeCategory(
+                kind: definition.kind,
+                title: definition.title,
+                paths: definition.paths,
+                ownershipSummary: definition.ownershipSummary,
+                safetyClassification: definition.safetyClassification
+            ) { _, _, _ in
+                guard totalProgressUnits > 0 else {
+                    return
+                }
+                processedProgressUnits += 1
+                progressHandler?(
+                    Double(processedProgressUnits) / Double(totalProgressUnits),
+                    "Sizing \(definition.title) (\(processedProgressUnits) of \(totalProgressUnits))"
+                )
+            }
+        }
         .sorted { lhs, rhs in
             if lhs.bytes != rhs.bytes {
                 return lhs.bytes > rhs.bytes
@@ -307,7 +425,29 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
             return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
         }
 
-        let countedOnlyComponents = buildCountedOnlyFootprintComponents(homeDirectoryURL: homeDirectoryURL)
+        let countedOnlyComponents = componentDefinitions.map { definition in
+            makeFootprintComponent(
+                kind: definition.kind,
+                title: definition.title,
+                paths: definition.paths,
+                ownershipSummary: definition.ownershipSummary
+            ) { _, _, _ in
+                guard totalProgressUnits > 0 else {
+                    return
+                }
+                processedProgressUnits += 1
+                progressHandler?(
+                    Double(processedProgressUnits) / Double(totalProgressUnits),
+                    "Sizing \(definition.title) (\(processedProgressUnits) of \(totalProgressUnits))"
+                )
+            }
+        }
+        .sorted { lhs, rhs in
+            if lhs.bytes != rhs.bytes {
+                return lhs.bytes > rhs.bytes
+            }
+            return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+        }
 
         let totalBytes = categories.reduce(Int64(0)) { partialResult, category in
             partialResult + category.bytes
@@ -321,77 +461,6 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
             countedOnlyComponents: countedOnlyComponents,
             totalBytes: totalBytes
         )
-    }
-
-    private func buildCountedOnlyFootprintComponents(
-        homeDirectoryURL: URL
-    ) -> [CountedFootprintComponentUsage] {
-        let developerRoot = homeDirectoryURL.appendingPathComponent("Library/Developer", isDirectory: true)
-        let xcodeRoot = developerRoot.appendingPathComponent("Xcode", isDirectory: true)
-        let logsRoot = homeDirectoryURL.appendingPathComponent("Library/Logs", isDirectory: true)
-
-        let components = [
-            makeFootprintComponent(
-                kind: .documentationCache,
-                title: "Documentation Cache",
-                paths: [xcodeRoot.appendingPathComponent("DocumentationCache", isDirectory: true)],
-                ownershipSummary: "Counted in total footprint only; owned by downloaded Xcode documentation caches."
-            ),
-            makeFootprintComponent(
-                kind: .developerPackages,
-                title: "Developer Packages",
-                paths: [developerRoot.appendingPathComponent("Packages", isDirectory: true)],
-                ownershipSummary: "Counted in total footprint only; owned by Apple developer support packages downloaded for Xcode."
-            ),
-            makeFootprintComponent(
-                kind: .xcodeLogs,
-                title: "Xcode Logs",
-                paths: [logsRoot.appendingPathComponent("Xcode", isDirectory: true)],
-                ownershipSummary: "Counted in total footprint only; owned by Xcode log and result history stored under ~/Library/Logs/Xcode."
-            ),
-            makeFootprintComponent(
-                kind: .coreSimulatorLogs,
-                title: "CoreSimulator Logs",
-                paths: [logsRoot.appendingPathComponent("CoreSimulator", isDirectory: true)],
-                ownershipSummary: "Counted in total footprint only; owned by CoreSimulator log history stored under ~/Library/Logs/CoreSimulator."
-            ),
-            makeFootprintComponent(
-                kind: .dvtDownloads,
-                title: "DVTDownloads",
-                paths: [developerRoot.appendingPathComponent("DVTDownloads", isDirectory: true)],
-                ownershipSummary: "Counted in total footprint only; owned by downloaded Xcode developer tool assets and components."
-            ),
-            makeFootprintComponent(
-                kind: .xcpgDevices,
-                title: "XCPG Devices",
-                paths: [developerRoot.appendingPathComponent("XCPGDevices", isDirectory: true)],
-                ownershipSummary: "Counted in total footprint only; owned by Xcode-managed Playground/CoreSimulator device-set state."
-            ),
-            makeFootprintComponent(
-                kind: .xcTestDevices,
-                title: "XCTest Devices",
-                paths: [developerRoot.appendingPathComponent("XCTestDevices", isDirectory: true)],
-                ownershipSummary: "Counted in total footprint only; owned by XCTest device-set state used by Xcode tooling."
-            ),
-            makeFootprintComponent(
-                kind: .additionalXcodeState,
-                title: "Additional Xcode State",
-                paths: [
-                    xcodeRoot.appendingPathComponent("UserData", isDirectory: true),
-                    xcodeRoot.appendingPathComponent("DocumentationIndex", isDirectory: true),
-                    xcodeRoot.appendingPathComponent("SDKToSimulatorIndexMapping.plist", isDirectory: false),
-                    xcodeRoot.appendingPathComponent("XcodeToMetalToolchainIndexMapping.plist", isDirectory: false),
-                ],
-                ownershipSummary: "Counted in total footprint only; owned by smaller Xcode-managed state under ~/Library/Developer/Xcode."
-            ),
-        ]
-
-        return components.sorted { lhs, rhs in
-            if lhs.bytes != rhs.bytes {
-                return lhs.bytes > rhs.bytes
-            }
-            return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
-        }
     }
 
     private func simulatorStoragePaths(
@@ -429,7 +498,8 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
     }
 
     private func buildPhysicalDeviceSupportDirectories(
-        from storage: XcodeStorageUsage
+        from storage: XcodeStorageUsage,
+        progressHandler: ((Double, String) -> Void)? = nil
     ) -> [PhysicalDeviceSupportDirectoryRecord] {
         let deviceSupportRoots = storage.categories
             .filter { $0.kind == .deviceSupport }
@@ -438,6 +508,7 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
         var discovered: [(record: PhysicalDeviceSupportDirectoryRecord, parsed: ParsedPhysicalDeviceSupportDirectoryName)] = []
         var seenPaths = Set<String>()
         let resourceKeys: Set<URLResourceKey> = [.isDirectoryKey, .contentModificationDateKey]
+        var candidates: [(url: URL, modifiedAt: Date?)] = []
 
         for rootPath in deviceSupportRoots {
             let rootURL = URL(filePath: rootPath, directoryHint: .isDirectory)
@@ -460,21 +531,30 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
                     continue
                 }
 
-                let parsed = parsePhysicalDeviceSupportDirectoryMetadata(at: childURL)
-                let sizeInBytes = pathSizer.fileExists(at: childURL) ? pathSizer.allocatedSize(at: childURL) : 0
-                discovered.append((
-                    record: PhysicalDeviceSupportDirectoryRecord(
-                        name: childURL.lastPathComponent,
-                        path: normalizedPath,
-                        sizeInBytes: sizeInBytes,
-                        modifiedAt: values.contentModificationDate,
-                        parsedOSVersion: parsed.osVersion,
-                        parsedBuild: parsed.build,
-                        parsedDescriptor: parsed.descriptor
-                    ),
-                    parsed: parsed
-                ))
+                candidates.append((url: childURL, modifiedAt: values.contentModificationDate))
             }
+        }
+
+        for (index, candidate) in candidates.enumerated() {
+            let parsed = parsePhysicalDeviceSupportDirectoryMetadata(at: candidate.url)
+            let normalizedPath = normalizedPath(for: candidate.url) ?? candidate.url.path
+            let sizeInBytes = pathSizer.fileExists(at: candidate.url) ? pathSizer.allocatedSize(at: candidate.url) : 0
+            discovered.append((
+                record: PhysicalDeviceSupportDirectoryRecord(
+                    name: candidate.url.lastPathComponent,
+                    path: normalizedPath,
+                    sizeInBytes: sizeInBytes,
+                    modifiedAt: candidate.modifiedAt,
+                    parsedOSVersion: parsed.osVersion,
+                    parsedBuild: parsed.build,
+                    parsedDescriptor: parsed.descriptor
+                ),
+                parsed: parsed
+            ))
+            progressHandler?(
+                progressFraction(completed: index + 1, total: candidates.count),
+                "Sizing device support directory \(index + 1) of \(candidates.count): \(candidate.url.lastPathComponent)"
+            )
         }
 
         discovered.sort { lhs, rhs in
@@ -525,12 +605,18 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
         )
     }
 
-    private func buildSimulatorInventory(from listing: SimulatorListing) -> SimulatorInventory {
+    private func buildSimulatorInventory(
+        from listing: SimulatorListing,
+        progressHandler: ((Double, String) -> Void)? = nil
+    ) -> SimulatorInventory {
         let homeDirectoryURL = homeDirectoryProvider.homeDirectoryURL()
         let simulatorDeviceRoot = homeDirectoryURL.appendingPathComponent("Library/Developer/CoreSimulator/Devices", isDirectory: true)
+        let totalProgressUnits = listing.runtimes.count + listing.devices.count
+        var processedProgressUnits = 0
 
         let runtimes = listing.runtimes
-            .map { runtime -> SimulatorRuntimeRecord in
+            .enumerated()
+            .map { index, runtime -> SimulatorRuntimeRecord in
                 let bundlePath = runtime.bundlePath.flatMap { path in
                     normalizedPath(for: URL(filePath: path, directoryHint: .isDirectory)) ?? path
                 }
@@ -541,6 +627,12 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
                 } else {
                     sizeInBytes = 0
                 }
+
+                processedProgressUnits += 1
+                progressHandler?(
+                    progressFraction(completed: processedProgressUnits, total: totalProgressUnits),
+                    "Sizing simulator runtime \(index + 1) of \(listing.runtimes.count): \(runtime.name)"
+                )
 
                 return SimulatorRuntimeRecord(
                     identifier: runtime.identifier,
@@ -566,7 +658,8 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
         let runtimeNamesByIdentifier = Dictionary(uniqueKeysWithValues: runtimes.map { ($0.identifier, $0.name) })
 
         let devices = listing.devices
-            .map { device -> SimulatorDeviceRecord in
+            .enumerated()
+            .map { index, device -> SimulatorDeviceRecord in
                 let dataPathURL = simulatorDeviceRoot.appendingPathComponent(device.udid, isDirectory: true)
                 let normalizedDataPath = normalizedPath(for: dataPathURL) ?? dataPathURL.path
                 let sizeInBytes = pathSizer.fileExists(at: dataPathURL) ? pathSizer.allocatedSize(at: dataPathURL) : 0
@@ -574,6 +667,12 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
                 let runtimeName = runtimeNamesByIdentifier[device.runtimeIdentifier]
                 let ownership = runtimeName.map { "Owned by simulator device data for \($0)" }
                     ?? "Owned by simulator device data"
+
+                processedProgressUnits += 1
+                progressHandler?(
+                    progressFraction(completed: processedProgressUnits, total: totalProgressUnits),
+                    "Sizing simulator device \(index + 1) of \(listing.devices.count): \(device.name)"
+                )
 
                 return SimulatorDeviceRecord(
                     udid: device.udid,
@@ -607,29 +706,16 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
         title: String,
         paths: [URL],
         ownershipSummary: String,
-        safetyClassification: SafetyClassification
+        safetyClassification: SafetyClassification,
+        onPathProcessed: ((Int, Int, String) -> Void)? = nil
     ) -> StorageCategoryUsage {
-        var seen = Set<String>()
-        var existingPaths: [String] = []
-        var bytes = Int64(0)
-
-        for pathURL in paths {
-            let normalized = normalizedPath(for: pathURL) ?? pathURL.path
-            guard seen.insert(normalized).inserted else {
-                continue
-            }
-            guard pathSizer.fileExists(at: pathURL) else {
-                continue
-            }
-            existingPaths.append(normalized)
-            bytes += pathSizer.allocatedSize(at: pathURL)
-        }
+        let measurement = measurePathUsage(paths: paths, onPathProcessed: onPathProcessed)
 
         return StorageCategoryUsage(
             kind: kind,
             title: title,
-            bytes: bytes,
-            paths: existingPaths,
+            bytes: measurement.bytes,
+            paths: measurement.paths,
             ownershipSummary: ownershipSummary,
             safetyClassification: safetyClassification
         )
@@ -639,31 +725,53 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
         kind: CountedFootprintComponentKind,
         title: String,
         paths: [URL],
-        ownershipSummary: String
+        ownershipSummary: String,
+        onPathProcessed: ((Int, Int, String) -> Void)? = nil
     ) -> CountedFootprintComponentUsage {
-        var seen = Set<String>()
-        var existingPaths: [String] = []
-        var bytes = Int64(0)
-
-        for pathURL in paths {
-            let normalized = normalizedPath(for: pathURL) ?? pathURL.path
-            guard seen.insert(normalized).inserted else {
-                continue
-            }
-            guard pathSizer.fileExists(at: pathURL) else {
-                continue
-            }
-            existingPaths.append(normalized)
-            bytes += pathSizer.allocatedSize(at: pathURL)
-        }
+        let measurement = measurePathUsage(paths: paths, onPathProcessed: onPathProcessed)
 
         return CountedFootprintComponentUsage(
             kind: kind,
             title: title,
-            bytes: bytes,
-            paths: existingPaths,
+            bytes: measurement.bytes,
+            paths: measurement.paths,
             ownershipSummary: ownershipSummary
         )
+    }
+
+    private func measurePathUsage(
+        paths: [URL],
+        onPathProcessed: ((Int, Int, String) -> Void)? = nil
+    ) -> (paths: [String], bytes: Int64) {
+        let uniquePaths = deduplicatedNormalizedPaths(from: paths)
+        var existingPaths: [String] = []
+        var bytes = Int64(0)
+
+        for (index, pathURL) in uniquePaths.enumerated() {
+            let normalized = pathURL.path
+            if pathSizer.fileExists(at: pathURL) {
+                existingPaths.append(normalized)
+                bytes += pathSizer.allocatedSize(at: pathURL)
+            }
+            onPathProcessed?(index + 1, uniquePaths.count, normalized)
+        }
+
+        return (paths: existingPaths, bytes: bytes)
+    }
+
+    private func progressUnitCount(for paths: [URL]) -> Int {
+        deduplicatedNormalizedPaths(from: paths).count
+    }
+
+    private func progressFraction(completed: Int, total: Int) -> Double {
+        guard total > 0 else {
+            return 1
+        }
+        return min(1, max(0, Double(completed) / Double(total)))
+    }
+
+    private func interpolatedProgress(start: Double, end: Double, progress: Double) -> Double {
+        start + (end - start) * min(1, max(0, progress))
     }
 
     private func runningXcodeInstanceCountByInstallPath(from runningApplications: [RunningApplicationRecord]) -> [String: Int] {
