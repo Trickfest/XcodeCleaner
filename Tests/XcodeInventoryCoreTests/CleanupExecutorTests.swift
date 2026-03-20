@@ -358,7 +358,7 @@ struct CleanupExecutorTests {
         #expect(report.totalReclaimedBytes == 70)
         #expect(report.results.first?.operation == .simctlDelete)
         #expect(report.results.first?.pathResults.first?.operation == .simctlDelete)
-        #expect(runtimeManager.deletedIdentifiers == ["runtime-1"])
+        #expect(runtimeManager.deletedIdentifiers == ["runtime-delete-1"])
     }
 
     @Test("Cleanup executor uses simctl for stale simulator runtime cleanup")
@@ -404,7 +404,7 @@ struct CleanupExecutorTests {
         #expect(report.results.count == 1)
         #expect(report.succeededCount == 1)
         #expect(report.results.first?.operation == .simctlDelete)
-        #expect(runtimeManager.deletedIdentifiers == ["runtime-1"])
+        #expect(runtimeManager.deletedIdentifiers == ["runtime-delete-1"])
     }
 
     @Test("Cleanup executor reports simctl runtime delete failures")
@@ -421,7 +421,7 @@ struct CleanupExecutorTests {
             selectedSimulatorRuntimeIdentifiers: ["runtime-1"],
             selectedXcodeInstallPaths: []
         )
-        let runtimeManager = StubSimulatorRuntimeManager(failIdentifiers: ["runtime-1"])
+        let runtimeManager = StubSimulatorRuntimeManager(failIdentifiers: ["runtime-delete-1"])
 
         let executor = CleanupExecutor(
             fileOperator: StubCleanupFileOperator(existingPaths: []),
@@ -438,6 +438,8 @@ struct CleanupExecutorTests {
         #expect(report.totalReclaimedBytes == 0)
         #expect(report.results.first?.status == .failed)
         #expect(report.results.first?.pathResults.first?.message.contains("simctl runtime delete failed") == true)
+        #expect(report.results.first?.pathResults.first?.message.contains("runtime-delete-1") == true)
+        #expect(report.results.first?.pathResults.first?.operation == .simctlDelete)
     }
 
     @Test("Cleanup executor reports simctl device delete failures")
@@ -473,6 +475,95 @@ struct CleanupExecutorTests {
         #expect(report.totalReclaimedBytes == 0)
         #expect(report.results.first?.status == .failed)
         #expect(report.results.first?.pathResults.first?.message.contains("simctl delete failed") == true)
+        #expect(report.results.first?.pathResults.first?.operation == .simctlDelete)
+    }
+
+    @Test("Simctl runtime manager waits for both runtime listings to converge after delete")
+    func simctlRuntimeManagerWaitsForListingConvergence() throws {
+        let deleteIdentifier = "F494D526-FCD7-445B-90AB-C47002D37BDE"
+        let runtimeIdentifier = "com.apple.CoreSimulator.SimRuntime.iOS-26-0"
+        let commandRunner = SequencedCommandRunner(
+            responsesByCommand: [
+                .init(
+                    launchPath: "/usr/bin/xcrun",
+                    arguments: ["simctl", "runtime", "delete", deleteIdentifier]
+                ): [""],
+                .init(
+                    launchPath: "/usr/bin/xcrun",
+                    arguments: ["simctl", "runtime", "list", "-j"]
+                ): [
+                    """
+                    {
+                      "\(deleteIdentifier)": {
+                        "identifier": "\(deleteIdentifier)",
+                        "runtimeIdentifier": "\(runtimeIdentifier)"
+                      }
+                    }
+                    """,
+                    "{}",
+                    "{}",
+                ],
+                .init(
+                    launchPath: "/usr/bin/xcrun",
+                    arguments: ["simctl", "list", "runtimes", "--json"]
+                ): [
+                    """
+                    {
+                      "runtimes": [
+                        {
+                          "identifier": "\(runtimeIdentifier)"
+                        }
+                      ]
+                    }
+                    """,
+                    """
+                    {
+                      "runtimes": []
+                    }
+                    """,
+                ],
+            ]
+        )
+        let sleepRecorder = SleepRecorder()
+        let manager = SimctlSimulatorRuntimeManager(
+            commandRunner: commandRunner,
+            maxConvergenceAttempts: 4,
+            convergenceDelaySeconds: 0.01,
+            sleep: { sleepRecorder.record($0) }
+        )
+
+        try manager.deleteRuntime(
+            deleteIdentifier: deleteIdentifier,
+            runtimeIdentifier: runtimeIdentifier
+        )
+
+        #expect(commandRunner.recordedCommands == [
+            .init(
+                launchPath: "/usr/bin/xcrun",
+                arguments: ["simctl", "runtime", "delete", deleteIdentifier]
+            ),
+            .init(
+                launchPath: "/usr/bin/xcrun",
+                arguments: ["simctl", "runtime", "list", "-j"]
+            ),
+            .init(
+                launchPath: "/usr/bin/xcrun",
+                arguments: ["simctl", "runtime", "list", "-j"]
+            ),
+            .init(
+                launchPath: "/usr/bin/xcrun",
+                arguments: ["simctl", "list", "runtimes", "--json"]
+            ),
+            .init(
+                launchPath: "/usr/bin/xcrun",
+                arguments: ["simctl", "runtime", "list", "-j"]
+            ),
+            .init(
+                launchPath: "/usr/bin/xcrun",
+                arguments: ["simctl", "list", "runtimes", "--json"]
+            ),
+        ])
+        #expect(sleepRecorder.calls == [0.01, 0.01])
     }
 
     @Test("Cleanup executor blocks orphaned simulator runtime cleanup as manual-only")
@@ -564,7 +655,7 @@ struct CleanupExecutorTests {
         #expect(pathResults["/tmp/CoreSimulator/Profiles/Runtimes/iOS-19.simruntime"]?.operation == .simctlDelete)
         #expect(pathResults["/tmp/CoreSimulator/Caches/dyld-cache"]?.operation == .moveToTrash)
         #expect(deviceManager.deletedUDIDs == ["SIM-SHUT"])
-        #expect(runtimeManager.deletedIdentifiers == ["runtime-1"])
+        #expect(runtimeManager.deletedIdentifiers == ["runtime-delete-1"])
     }
 
     @Test("Cleanup executor allows explicit orphaned simulator device cleanup through stale-artifact plans")
@@ -630,11 +721,44 @@ private final class StubSimulatorRuntimeManager: SimulatorRuntimeManaging {
         self.failIdentifiers = failIdentifiers
     }
 
-    func deleteRuntime(identifier: String) throws {
-        if failIdentifiers.contains(identifier) {
+    func deleteRuntime(deleteIdentifier: String, runtimeIdentifier: String) throws {
+        if failIdentifiers.contains(deleteIdentifier) {
             throw StubCleanupError.removeItemFailed
         }
-        deletedIdentifiers.append(identifier)
+        deletedIdentifiers.append(deleteIdentifier)
+    }
+}
+
+private final class SequencedCommandRunner: CommandRunning {
+    struct Key: Hashable {
+        let launchPath: String
+        let arguments: [String]
+    }
+
+    private var responsesByCommand: [Key: [String]]
+    private(set) var recordedCommands: [Key] = []
+
+    init(responsesByCommand: [Key: [String]]) {
+        self.responsesByCommand = responsesByCommand
+    }
+
+    func run(launchPath: String, arguments: [String]) throws -> String {
+        let key = Key(launchPath: launchPath, arguments: arguments)
+        recordedCommands.append(key)
+        guard var responses = responsesByCommand[key], !responses.isEmpty else {
+            throw SequencedCommandRunnerError.unsupportedCommand
+        }
+        let response = responses.removeFirst()
+        responsesByCommand[key] = responses
+        return response
+    }
+}
+
+private final class SleepRecorder: @unchecked Sendable {
+    private(set) var calls: [TimeInterval] = []
+
+    func record(_ interval: TimeInterval) {
+        calls.append(interval)
     }
 }
 
@@ -701,6 +825,10 @@ private struct StubExecutionPathSizer: PathSizing {
 private enum StubCleanupError: Error {
     case moveToTrashFailed
     case removeItemFailed
+}
+
+private enum SequencedCommandRunnerError: Error {
+    case unsupportedCommand
 }
 
 private func makeExecutionSnapshot(
@@ -806,6 +934,7 @@ private func makeExecutionSnapshot(
         runtimes: [
             SimulatorRuntimeRecord(
                 identifier: "runtime-1",
+                deleteIdentifier: "runtime-delete-1",
                 name: "iOS 19.0",
                 version: "19.0",
                 isAvailable: true,
@@ -878,6 +1007,7 @@ private func makeAggregateSimulatorDataSnapshot() -> XcodeInventorySnapshot {
         runtimes: [
             SimulatorRuntimeRecord(
                 identifier: "runtime-1",
+                deleteIdentifier: "runtime-delete-1",
                 name: "iOS 19.0",
                 version: "19.0",
                 isAvailable: true,

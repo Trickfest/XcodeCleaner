@@ -3,6 +3,139 @@ import Testing
 @testable import XcodeInventoryCore
 
 struct XcodeInventoryScannerTests {
+    @Test("Simctl runtime listing provider captures delete-specific runtime identifiers and filters stale volume-backed runtime entries")
+    func simctlRuntimeListingProviderCapturesDeleteIdentifiers() {
+        let commandRunner = StubCommandRunner(
+            responses: [
+                StubCommandRunner.Key(
+                    launchPath: "/usr/bin/xcrun",
+                    arguments: ["simctl", "list", "devices", "--json"]
+                ): """
+                {
+                  "devices": {
+                    "com.apple.CoreSimulator.SimRuntime.iOS-26-0": [
+                      {
+                        "udid": "SIM-001",
+                        "name": "iPhone 17",
+                        "state": "Shutdown",
+                        "isAvailable": true
+                      }
+                    ]
+                  }
+                }
+                """,
+                StubCommandRunner.Key(
+                    launchPath: "/usr/bin/xcrun",
+                    arguments: ["simctl", "list", "runtimes", "--json"]
+                ): """
+                {
+                  "runtimes": [
+                    {
+                      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-26-0",
+                      "name": "iOS 26.0",
+                      "version": "26.0.1",
+                      "isAvailable": true,
+                      "bundlePath": "/Library/Developer/CoreSimulator/Volumes/iOS_23A8464/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 26.0.simruntime"
+                    },
+                    {
+                      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-17-0",
+                      "name": "iOS 17.0",
+                      "version": "17.0",
+                      "isAvailable": true,
+                      "bundlePath": "/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 17.0.simruntime"
+                    },
+                    {
+                      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-18-0",
+                      "name": "iOS 18.0",
+                      "version": "18.0",
+                      "isAvailable": true,
+                      "bundlePath": "/Library/Developer/CoreSimulator/Volumes/iOS_STALE/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 18.0.simruntime"
+                    }
+                  ]
+                }
+                """,
+                StubCommandRunner.Key(
+                    launchPath: "/usr/bin/xcrun",
+                    arguments: ["simctl", "runtime", "list", "-j"]
+                ): """
+                {
+                  "F494D526-FCD7-445B-90AB-C47002D37BDE": {
+                    "identifier": "F494D526-FCD7-445B-90AB-C47002D37BDE",
+                    "runtimeIdentifier": "com.apple.CoreSimulator.SimRuntime.iOS-26-0",
+                    "runtimeBundlePath": "/Library/Developer/CoreSimulator/Volumes/iOS_23A8464/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 26.0.simruntime",
+                    "version": "26.0.1"
+                  }
+                }
+                """,
+            ]
+        )
+
+        let provider = SimctlSimulatorListingProvider(commandRunner: commandRunner)
+
+        let listing = provider.simulatorListing()
+
+        #expect(listing.devices.count == 1)
+        #expect(listing.devices.first?.runtimeIdentifier == "com.apple.CoreSimulator.SimRuntime.iOS-26-0")
+        #expect(listing.runtimes.count == 2)
+        #expect(listing.runtimes.first?.identifier == "com.apple.CoreSimulator.SimRuntime.iOS-26-0")
+        #expect(listing.runtimes.first?.deleteIdentifier == "F494D526-FCD7-445B-90AB-C47002D37BDE")
+        #expect(listing.runtimes.contains(where: {
+            $0.identifier == "com.apple.CoreSimulator.SimRuntime.iOS-17-0" && $0.deleteIdentifier == nil
+        }))
+        #expect(listing.runtimes.contains(where: { $0.identifier == "com.apple.CoreSimulator.SimRuntime.iOS-18-0" }) == false)
+    }
+
+    @Test("Scanner suppresses simulator runtimes whose bundle paths are already gone on disk")
+    func scannerSuppressesRuntimesWithMissingBundlePaths() throws {
+        let sandbox = try TemporaryDirectory.make()
+        defer { sandbox.cleanup() }
+
+        let fakeHome = sandbox.url.appendingPathComponent("fake-home", isDirectory: true)
+        let existingRuntimePath = "/Library/Developer/CoreSimulator/Volumes/iOS_23C54/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 26.2.simruntime"
+        let deletedRuntimePath = "/Library/Developer/CoreSimulator/Volumes/iOS_STALE/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 18.6.simruntime"
+
+        let scanner = XcodeInventoryScanner(
+            applicationDiscoverer: StubDiscoverer(urls: []),
+            activeDeveloperDirectoryProvider: StubActiveDeveloperProvider(url: nil),
+            pathSizer: StubPathSizer(sizeByPath: [
+                existingRuntimePath: 18109272064,
+            ]),
+            homeDirectoryProvider: StubHomeDirectoryProvider(url: fakeHome),
+            runningApplicationsProvider: StubRunningApplicationsProvider(records: []),
+            simulatorListingProvider: StubSimulatorListingProvider(
+                listing: SimulatorListing(
+                    devices: [],
+                    runtimes: [
+                        SimulatorRuntimeListingRecord(
+                            identifier: "com.apple.CoreSimulator.SimRuntime.iOS-26-2",
+                            deleteIdentifier: "runtime-delete-26-2",
+                            name: "iOS 26.2",
+                            version: "26.2",
+                            isAvailable: true,
+                            bundlePath: existingRuntimePath
+                        ),
+                        SimulatorRuntimeListingRecord(
+                            identifier: "com.apple.CoreSimulator.SimRuntime.iOS-18-6",
+                            deleteIdentifier: "runtime-delete-18-6",
+                            name: "iOS 18.6",
+                            version: "18.6",
+                            isAvailable: true,
+                            bundlePath: deletedRuntimePath
+                        ),
+                    ]
+                )
+            )
+        )
+
+        let snapshot = scanner.scan()
+
+        #expect(snapshot.simulator.runtimes.map(\.identifier) == ["com.apple.CoreSimulator.SimRuntime.iOS-26-2"])
+        #expect(snapshot.simulator.runtimes.map(\.bundlePath) == [existingRuntimePath])
+        let simulatorData = try #require(snapshot.storage.categories.first(where: { $0.kind == .simulatorData }))
+        #expect(simulatorData.paths.contains(existingRuntimePath))
+        #expect(simulatorData.paths.contains(deletedRuntimePath) == false)
+    }
+
     @Test("Scanner discovers installs, deduplicates paths, and marks active install")
     func scannerDiscoversAndMarksActiveInstall() throws {
         let sandbox = try TemporaryDirectory.make()
@@ -1238,6 +1371,31 @@ private struct StubSimulatorListingProvider: SimulatorListingProviding {
     func simulatorListing() -> SimulatorListing {
         listing
     }
+}
+
+private final class StubCommandRunner: CommandRunning {
+    struct Key: Hashable {
+        let launchPath: String
+        let arguments: [String]
+    }
+
+    let responses: [Key: String]
+
+    init(responses: [Key: String]) {
+        self.responses = responses
+    }
+
+    func run(launchPath: String, arguments: [String]) throws -> String {
+        let key = Key(launchPath: launchPath, arguments: arguments)
+        guard let response = responses[key] else {
+            throw StubCommandRunnerError.unsupportedCommand(key)
+        }
+        return response
+    }
+}
+
+private enum StubCommandRunnerError: Error {
+    case unsupportedCommand(StubCommandRunner.Key)
 }
 
 private struct TemporaryDirectory {

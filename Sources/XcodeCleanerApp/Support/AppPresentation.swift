@@ -314,6 +314,19 @@ enum AppPresentation {
         }
     }
 
+    static func color(for status: CleanupPathStatus) -> Color {
+        switch status {
+        case .succeeded:
+            return .green
+        case .blocked:
+            return .yellow
+        case .failed:
+            return .red
+        case .skippedMissing:
+            return .secondary
+        }
+    }
+
     static func activeXcodeSwitchStatusLabel(_ status: ActiveXcodeSwitchStatus) -> String {
         switch status {
         case .succeeded:

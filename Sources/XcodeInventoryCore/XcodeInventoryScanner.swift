@@ -62,13 +62,22 @@ public struct SimulatorDeviceListingRecord: Equatable, Sendable {
 
 public struct SimulatorRuntimeListingRecord: Equatable, Sendable {
     public let identifier: String
+    public let deleteIdentifier: String?
     public let name: String
     public let version: String?
     public let isAvailable: Bool
     public let bundlePath: String?
 
-    public init(identifier: String, name: String, version: String?, isAvailable: Bool, bundlePath: String?) {
+    public init(
+        identifier: String,
+        deleteIdentifier: String? = nil,
+        name: String,
+        version: String?,
+        isAvailable: Bool,
+        bundlePath: String?
+    ) {
         self.identifier = identifier
+        self.deleteIdentifier = deleteIdentifier
         self.name = name
         self.version = version
         self.isAvailable = isAvailable
@@ -616,7 +625,7 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
 
         let runtimes = listing.runtimes
             .enumerated()
-            .map { index, runtime -> SimulatorRuntimeRecord in
+            .compactMap { index, runtime -> SimulatorRuntimeRecord? in
                 let bundlePath = runtime.bundlePath.flatMap { path in
                     normalizedPath(for: URL(filePath: path, directoryHint: .isDirectory)) ?? path
                 }
@@ -634,8 +643,13 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
                     "Sizing simulator runtime \(index + 1) of \(listing.runtimes.count): \(runtime.name)"
                 )
 
+                guard !shouldSkipRuntimeInventoryRecord(runtime: runtime, normalizedBundlePath: bundlePath) else {
+                    return nil
+                }
+
                 return SimulatorRuntimeRecord(
                     identifier: runtime.identifier,
+                    deleteIdentifier: runtime.deleteIdentifier,
                     name: runtime.name,
                     version: runtime.version,
                     isAvailable: runtime.isAvailable,
@@ -699,6 +713,17 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
             }
 
         return SimulatorInventory(devices: devices, runtimes: runtimes)
+    }
+
+    private func shouldSkipRuntimeInventoryRecord(
+        runtime: SimulatorRuntimeListingRecord,
+        normalizedBundlePath: String?
+    ) -> Bool {
+        guard let normalizedBundlePath else {
+            return false
+        }
+        let runtimeURL = URL(filePath: normalizedBundlePath, directoryHint: .isDirectory)
+        return !pathSizer.fileExists(at: runtimeURL)
     }
 
     private func makeCategory(
@@ -1247,9 +1272,17 @@ public struct SimctlSimulatorListingProvider: SimulatorListingProviding {
             launchPath: "/usr/bin/xcrun",
             arguments: ["simctl", "list", "runtimes", "--json"]
         )
+        let runtimeDeleteIdentifiersJSON = try? commandRunner.run(
+            launchPath: "/usr/bin/xcrun",
+            arguments: ["simctl", "runtime", "list", "-j"]
+        )
+        let deleteIdentifierByRuntimeIdentifier = parseRuntimeDeleteIdentifiers(json: runtimeDeleteIdentifiersJSON)
         return SimulatorListing(
             devices: parseDevices(json: devicesJSON),
-            runtimes: parseRuntimes(json: runtimesJSON)
+            runtimes: parseRuntimes(
+                json: runtimesJSON,
+                deleteIdentifierByRuntimeIdentifier: deleteIdentifierByRuntimeIdentifier
+            )
         )
     }
 
@@ -1287,7 +1320,10 @@ public struct SimctlSimulatorListingProvider: SimulatorListingProviding {
         return devices
     }
 
-    private func parseRuntimes(json: String?) -> [SimulatorRuntimeListingRecord] {
+    private func parseRuntimes(
+        json: String?,
+        deleteIdentifierByRuntimeIdentifier: [String: String]
+    ) -> [SimulatorRuntimeListingRecord] {
         guard let json,
               let data = json.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -1302,15 +1338,60 @@ public struct SimctlSimulatorListingProvider: SimulatorListingProviding {
             let name = (entry["name"] as? String) ?? identifier
             let version = entry["version"] as? String
             let bundlePath = entry["bundlePath"] as? String
+            if shouldSkipRuntimeListing(
+                runtimeIdentifier: identifier,
+                bundlePath: bundlePath,
+                deleteIdentifierByRuntimeIdentifier: deleteIdentifierByRuntimeIdentifier
+            ) {
+                return nil
+            }
             let isAvailable = parseAvailability(entry["isAvailable"])
             return SimulatorRuntimeListingRecord(
                 identifier: identifier,
+                deleteIdentifier: deleteIdentifierByRuntimeIdentifier[identifier],
                 name: name,
                 version: version,
                 isAvailable: isAvailable,
                 bundlePath: bundlePath
             )
         }
+    }
+
+    private func shouldSkipRuntimeListing(
+        runtimeIdentifier: String,
+        bundlePath: String?,
+        deleteIdentifierByRuntimeIdentifier: [String: String]
+    ) -> Bool {
+        guard !deleteIdentifierByRuntimeIdentifier.isEmpty,
+              let bundlePath,
+              isVolumeBackedRuntimeBundlePath(bundlePath),
+              deleteIdentifierByRuntimeIdentifier[runtimeIdentifier] == nil else {
+            return false
+        }
+        return true
+    }
+
+    private func parseRuntimeDeleteIdentifiers(json: String?) -> [String: String] {
+        guard let json,
+              let data = json.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return [:]
+        }
+
+        var result: [String: String] = [:]
+        for (key, rawEntry) in object {
+            guard let entry = rawEntry as? [String: Any],
+                  let runtimeIdentifier = entry["runtimeIdentifier"] as? String else {
+                continue
+            }
+            let deleteIdentifier = (entry["identifier"] as? String) ?? key
+            result[runtimeIdentifier] = deleteIdentifier
+        }
+        return result
+    }
+
+    private func isVolumeBackedRuntimeBundlePath(_ bundlePath: String) -> Bool {
+        normalize(path: bundlePath).contains("/Library/Developer/CoreSimulator/Volumes/")
     }
 
     private func parseAvailability(_ value: Any?) -> Bool {
@@ -1323,6 +1404,10 @@ public struct SimctlSimulatorListingProvider: SimulatorListingProviding {
         }
         return false
     }
+
+    private func normalize(path: String) -> String {
+        URL(filePath: path).standardizedFileURL.resolvingSymlinksInPath().path
+    }
 }
 
 public struct ProcessCommandRunner: CommandRunning {
@@ -1334,23 +1419,43 @@ public struct ProcessCommandRunner: CommandRunning {
         process.arguments = arguments
 
         let outputPipe = Pipe()
+        let errorPipe = Pipe()
         process.standardOutput = outputPipe
-        process.standardError = Pipe()
+        process.standardError = errorPipe
 
         try process.run()
         process.waitUntilExit()
 
+        let standardOutputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        let standardErrorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+        let standardError = String(decoding: standardErrorData, as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
         guard process.terminationStatus == 0 else {
-            throw ProcessError.nonZeroExit(terminationStatus: process.terminationStatus)
+            throw ProcessError.nonZeroExit(
+                terminationStatus: process.terminationStatus,
+                standardError: standardError.isEmpty ? nil : standardError
+            )
         }
 
-        let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
-        return String(decoding: data, as: UTF8.self)
+        return String(decoding: standardOutputData, as: UTF8.self)
     }
 }
 
 public enum ProcessError: Error {
-    case nonZeroExit(terminationStatus: Int32)
+    case nonZeroExit(terminationStatus: Int32, standardError: String?)
+}
+
+extension ProcessError: LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case let .nonZeroExit(terminationStatus, standardError):
+            if let standardError, !standardError.isEmpty {
+                return "Process exited with status \(terminationStatus). \(standardError)"
+            }
+            return "Process exited with status \(terminationStatus)."
+        }
+    }
 }
 
 private enum InfoPlistKeys {

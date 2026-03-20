@@ -37,13 +37,20 @@ struct ExecutionReportView: View {
 
                     Text(result.message)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(result.status == .failed ? AppPresentation.color(for: result.status) : .secondary)
 
                     ForEach(result.pathResults) { pathResult in
                         Text("\(AppPresentation.cleanupPathStatusLabel(pathResult.status)): \(pathResult.path) (\(AppPresentation.cleanupOperationLabel(pathResult.operation)), \(AppPresentation.formatBytes(pathResult.reclaimedBytes)))")
                             .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(AppPresentation.color(for: pathResult.status))
                             .textSelection(.enabled)
+
+                        if !pathResult.message.isEmpty {
+                            Text(pathResult.message)
+                                .font(.caption)
+                                .foregroundStyle(pathResult.status == .failed ? AppPresentation.color(for: pathResult.status) : .secondary)
+                                .textSelection(.enabled)
+                        }
                     }
                 }
                 .padding(8)

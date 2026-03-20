@@ -198,6 +198,7 @@ public struct SimulatorRuntimeRecord: Codable, Equatable, Identifiable, Sendable
     public var id: String { identifier }
 
     public let identifier: String
+    public let deleteIdentifier: String?
     public let name: String
     public let version: String?
     public let isAvailable: Bool
@@ -208,6 +209,7 @@ public struct SimulatorRuntimeRecord: Codable, Equatable, Identifiable, Sendable
 
     public init(
         identifier: String,
+        deleteIdentifier: String? = nil,
         name: String,
         version: String?,
         isAvailable: Bool,
@@ -217,6 +219,7 @@ public struct SimulatorRuntimeRecord: Codable, Equatable, Identifiable, Sendable
         safetyClassification: SafetyClassification
     ) {
         self.identifier = identifier
+        self.deleteIdentifier = deleteIdentifier
         self.name = name
         self.version = version
         self.isAvailable = isAvailable

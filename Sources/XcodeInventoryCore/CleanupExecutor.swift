@@ -27,21 +27,91 @@ public struct FileManagerCleanupFileOperator: CleanupFileOperating {
 }
 
 public protocol SimulatorRuntimeManaging {
-    func deleteRuntime(identifier: String) throws
+    func deleteRuntime(deleteIdentifier: String, runtimeIdentifier: String) throws
 }
 
 public struct SimctlSimulatorRuntimeManager: SimulatorRuntimeManaging {
     private let commandRunner: CommandRunning
+    private let maxConvergenceAttempts: Int
+    private let convergenceDelaySeconds: TimeInterval
+    private let sleep: @Sendable (TimeInterval) -> Void
 
-    public init(commandRunner: CommandRunning = ProcessCommandRunner()) {
+    public init(
+        commandRunner: CommandRunning = ProcessCommandRunner(),
+        maxConvergenceAttempts: Int = 8,
+        convergenceDelaySeconds: TimeInterval = 0.25,
+        sleep: @escaping @Sendable (TimeInterval) -> Void = { Thread.sleep(forTimeInterval: $0) }
+    ) {
         self.commandRunner = commandRunner
+        self.maxConvergenceAttempts = maxConvergenceAttempts
+        self.convergenceDelaySeconds = convergenceDelaySeconds
+        self.sleep = sleep
     }
 
-    public func deleteRuntime(identifier: String) throws {
+    public func deleteRuntime(deleteIdentifier: String, runtimeIdentifier: String) throws {
         _ = try commandRunner.run(
             launchPath: "/usr/bin/xcrun",
-            arguments: ["simctl", "runtime", "delete", identifier]
+            arguments: ["simctl", "runtime", "delete", deleteIdentifier]
         )
+        waitForRuntimeRemoval(deleteIdentifier: deleteIdentifier, runtimeIdentifier: runtimeIdentifier)
+    }
+
+    private func waitForRuntimeRemoval(deleteIdentifier: String, runtimeIdentifier: String) {
+        guard maxConvergenceAttempts > 0 else {
+            return
+        }
+
+        for attempt in 0..<maxConvergenceAttempts {
+            if !runtimeStillPresent(deleteIdentifier: deleteIdentifier, runtimeIdentifier: runtimeIdentifier) {
+                return
+            }
+            guard attempt < maxConvergenceAttempts - 1 else {
+                return
+            }
+            sleep(convergenceDelaySeconds)
+        }
+    }
+
+    private func runtimeStillPresent(deleteIdentifier: String, runtimeIdentifier: String) -> Bool {
+        runtimeDeleteIdentifierStillPresent(deleteIdentifier)
+            || runtimeIdentifierStillPresent(runtimeIdentifier)
+    }
+
+    private func runtimeDeleteIdentifierStillPresent(_ deleteIdentifier: String) -> Bool {
+        guard let json = try? commandRunner.run(
+            launchPath: "/usr/bin/xcrun",
+            arguments: ["simctl", "runtime", "list", "-j"]
+        ),
+        let data = json.data(using: .utf8),
+        let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return true
+        }
+
+        if object.keys.contains(deleteIdentifier) {
+            return true
+        }
+        return object.values.contains { rawEntry in
+            guard let entry = rawEntry as? [String: Any] else {
+                return false
+            }
+            return (entry["identifier"] as? String) == deleteIdentifier
+        }
+    }
+
+    private func runtimeIdentifierStillPresent(_ runtimeIdentifier: String) -> Bool {
+        guard let json = try? commandRunner.run(
+            launchPath: "/usr/bin/xcrun",
+            arguments: ["simctl", "list", "runtimes", "--json"]
+        ),
+        let data = json.data(using: .utf8),
+        let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        let runtimes = object["runtimes"] as? [[String: Any]] else {
+            return true
+        }
+
+        return runtimes.contains { entry in
+            (entry["identifier"] as? String) == runtimeIdentifier
+        }
     }
 }
 
@@ -157,9 +227,10 @@ public struct CleanupExecutor: @unchecked Sendable {
                     snapshot: snapshot
                 ) {
                     switch target {
-                    case .runtime(let identifier):
+                    case .runtime(let identifier, let deleteIdentifier):
                         return executeKnownSimulatorRuntime(
                             identifier: identifier,
+                            deleteIdentifier: deleteIdentifier,
                             path: path
                         )
                     case .device(let udid):
@@ -457,7 +528,7 @@ public struct CleanupExecutor: @unchecked Sendable {
     }
 
     private enum KnownSimulatorCleanupTarget {
-        case runtime(identifier: String)
+        case runtime(identifier: String, deleteIdentifier: String)
         case device(udid: String)
     }
 
@@ -504,7 +575,10 @@ public struct CleanupExecutor: @unchecked Sendable {
             }
             return normalize(path: bundlePath) == normalizedPath
         }) {
-            return .runtime(identifier: runtime.identifier)
+            return .runtime(
+                identifier: runtime.identifier,
+                deleteIdentifier: runtime.deleteIdentifier ?? runtime.identifier
+            )
         }
 
         return nil
@@ -512,6 +586,7 @@ public struct CleanupExecutor: @unchecked Sendable {
 
     private func executeKnownSimulatorRuntime(
         identifier: String,
+        deleteIdentifier: String,
         path: String
     ) -> CleanupPathResult {
         let normalizedPath = normalize(path: path)
@@ -519,7 +594,10 @@ public struct CleanupExecutor: @unchecked Sendable {
             at: URL(filePath: normalizedPath, directoryHint: .inferFromPath)
         )
         do {
-            try simulatorRuntimeManager.deleteRuntime(identifier: identifier)
+            try simulatorRuntimeManager.deleteRuntime(
+                deleteIdentifier: deleteIdentifier,
+                runtimeIdentifier: identifier
+            )
             return CleanupPathResult(
                 path: normalizedPath,
                 status: .succeeded,
@@ -528,12 +606,18 @@ public struct CleanupExecutor: @unchecked Sendable {
                 message: "Deleted via simctl runtime delete."
             )
         } catch {
+            let identifierSummary: String
+            if deleteIdentifier == identifier {
+                identifierSummary = identifier
+            } else {
+                identifierSummary = "\(identifier) (delete identifier: \(deleteIdentifier))"
+            }
             return CleanupPathResult(
                 path: normalizedPath,
                 status: .failed,
-                operation: .none,
+                operation: .simctlDelete,
                 reclaimedBytes: 0,
-                message: "simctl runtime delete failed for \(identifier). Error: \(error.localizedDescription)"
+                message: "simctl runtime delete failed for \(identifierSummary). Error: \(error.localizedDescription)"
             )
         }
     }
@@ -559,7 +643,7 @@ public struct CleanupExecutor: @unchecked Sendable {
             return CleanupPathResult(
                 path: normalizedPath,
                 status: .failed,
-                operation: .none,
+                operation: .simctlDelete,
                 reclaimedBytes: 0,
                 message: "simctl delete failed for \(udid). Error: \(error.localizedDescription)"
             )
