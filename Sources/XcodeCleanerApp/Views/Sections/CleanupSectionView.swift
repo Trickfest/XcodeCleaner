@@ -7,80 +7,85 @@ struct CleanupSectionView: View {
 
     @State private var selectionState = CleanupSelectionState()
 
+    private enum LayoutMetrics {
+        static let sectionSpacing: CGFloat = 16
+        static let splitThreshold: CGFloat = 1_240
+        static let workflowWidthFraction: CGFloat = 0.34
+        static let minWorkflowWidth: CGFloat = 380
+        static let maxWorkflowWidth: CGFloat = 520
+        static let minSelectionWidth: CGFloat = 420
+    }
+
     var body: some View {
-        let selection = selectionState.selection(for: snapshot)
-        let plan = DryRunPlanner.makePlan(snapshot: snapshot, selection: selection)
-        let staleArtifactReport = viewModel.staleArtifactReport ?? StaleArtifactReport(
-            generatedAt: snapshot.scannedAt,
-            candidates: [],
-            totalReclaimableBytes: 0,
-            notes: []
-        )
-        let selectedStaleArtifactIDs = selectionState.selectedStaleArtifactIDs(from: staleArtifactReport)
-        let staleArtifactPlan = StaleArtifactPlanner.makePlan(
-            snapshot: snapshot,
-            report: staleArtifactReport,
-            selectedCandidateIDs: selectedStaleArtifactIDs,
-            now: Date(),
-            defaultToAllCandidatesWhenSelectionEmpty: false
-        )
-        let simulatorRuntimeByIdentifier = Dictionary(
-            uniqueKeysWithValues: snapshot.simulator.runtimes.map { ($0.identifier, $0) }
-        )
-        let runtimeStaleReasonsByIdentifier = AppPresentation.simulatorRuntimeStaleReasonsByIdentifier(in: snapshot)
-        let deviceStaleReasonsByUDID = AppPresentation.simulatorDeviceStaleReasonsByUDID(in: snapshot)
-        let runningXcodeInstances = snapshot.runtimeTelemetry.totalXcodeRunningInstances
-        let runningSimulatorAppInstances = snapshot.runtimeTelemetry.totalSimulatorAppRunningInstances
-        let bootedSimulatorDeviceCount = snapshot.simulator.devices.filter { device in
-            if device.runningInstanceCount > 0 {
-                return true
+        let viewState = makeViewState()
+
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: LayoutMetrics.sectionSpacing) {
+                    primaryCleanupPanels(
+                        availableWidth: proxy.size.width,
+                        viewState: viewState
+                    )
+
+                    staleArtifactWorkflowCard(
+                        viewState: viewState
+                    )
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            let state = device.state.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            return state == "booted" || state == "booting"
-        }.count
-        let runningToolsDetected =
-            runningXcodeInstances > 0 ||
-            runningSimulatorAppInstances > 0 ||
-            bootedSimulatorDeviceCount > 0
-        let executeBlockedByRunningTools = selectionState.blockCleanupWhileToolsRunning && runningToolsDetected
+        }
+    }
 
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                cleanupWorkflowCard(
-                    selection: selection,
-                    plan: plan,
-                    runningXcodeInstances: runningXcodeInstances,
-                    runningSimulatorAppInstances: runningSimulatorAppInstances,
-                    bootedSimulatorDeviceCount: bootedSimulatorDeviceCount,
-                    executeBlockedByRunningTools: executeBlockedByRunningTools
-                )
+    @ViewBuilder
+    private func primaryCleanupPanels(
+        availableWidth: CGFloat,
+        viewState: CleanupViewState
+    ) -> some View {
+        let layout = primaryCleanupLayout(for: availableWidth)
 
+        if layout.useSplitLayout {
+            HStack(alignment: .top, spacing: LayoutMetrics.sectionSpacing) {
                 selectionScopeCard(
-                    simulatorRuntimeByIdentifier: simulatorRuntimeByIdentifier,
-                    runtimeStaleReasonsByIdentifier: runtimeStaleReasonsByIdentifier,
-                    deviceStaleReasonsByUDID: deviceStaleReasonsByUDID
+                    viewState: viewState
+                )
+                .frame(width: layout.selectionWidth, alignment: .topLeading)
+
+                cleanupWorkflowCard(
+                    viewState: viewState
+                )
+                .frame(width: layout.workflowWidth, alignment: .topLeading)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            VStack(alignment: .leading, spacing: LayoutMetrics.sectionSpacing) {
+                selectionScopeCard(
+                    viewState: viewState
                 )
 
-                staleArtifactWorkflowCard(
-                    report: staleArtifactReport,
-                    plan: staleArtifactPlan,
-                    executeBlockedByRunningTools: executeBlockedByRunningTools,
-                    runningXcodeInstances: runningXcodeInstances,
-                    runningSimulatorAppInstances: runningSimulatorAppInstances,
-                    bootedSimulatorDeviceCount: bootedSimulatorDeviceCount
+                cleanupWorkflowCard(
+                    viewState: viewState
                 )
             }
         }
     }
 
-    private func cleanupWorkflowCard(
-        selection: DryRunSelection,
-        plan: DryRunPlan,
-        runningXcodeInstances: Int,
-        runningSimulatorAppInstances: Int,
-        bootedSimulatorDeviceCount: Int,
-        executeBlockedByRunningTools: Bool
-    ) -> some View {
+    private func primaryCleanupLayout(for availableWidth: CGFloat) -> PrimaryCleanupLayout {
+        let workflowWidth = min(
+            max(availableWidth * LayoutMetrics.workflowWidthFraction, LayoutMetrics.minWorkflowWidth),
+            LayoutMetrics.maxWorkflowWidth
+        )
+        let selectionWidth = max(
+            availableWidth - workflowWidth - LayoutMetrics.sectionSpacing,
+            LayoutMetrics.minSelectionWidth
+        )
+        return PrimaryCleanupLayout(
+            useSplitLayout: availableWidth >= LayoutMetrics.splitThreshold,
+            selectionWidth: selectionWidth,
+            workflowWidth: workflowWidth
+        )
+    }
+
+    private func cleanupWorkflowCard(viewState: CleanupViewState) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -95,19 +100,19 @@ struct CleanupSectionView: View {
                     Text("Estimated reclaim")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text(AppPresentation.formatBytes(plan.totalReclaimableBytes))
+                    Text(AppPresentation.formatBytes(viewState.plan.totalReclaimableBytes))
                         .font(.title3.weight(.semibold))
-                    Text("Planned items: \(plan.items.count)")
+                    Text("Planned items: \(viewState.plan.items.count)")
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
             }
 
-            if !plan.notes.isEmpty {
+            if !viewState.plan.notes.isEmpty {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Plan notes")
                         .font(.callout.weight(.medium))
-                    ForEach(Array(plan.notes.enumerated()), id: \.offset) { _, note in
+                    ForEach(Array(viewState.plan.notes.enumerated()), id: \.offset) { _, note in
                         Text(note)
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -117,12 +122,12 @@ struct CleanupSectionView: View {
 
             Text("Planned Items")
                 .font(.subheadline.weight(.semibold))
-            if plan.items.isEmpty {
+            if viewState.plan.items.isEmpty {
                 Text("No dry-run items selected.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(plan.items) { item in
+                ForEach(viewState.plan.items) { item in
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
                             Text(item.title)
@@ -169,16 +174,16 @@ struct CleanupSectionView: View {
                 HStack(spacing: 10) {
                     Button("Execute Cleanup") {
                         viewModel.execute(
-                            selection: selection,
+                            selection: viewState.selection,
                             allowDirectDelete: selectionState.allowDirectDeleteFallback,
                             requireToolsStopped: selectionState.blockCleanupWhileToolsRunning
                         )
                     }
                     .disabled(
-                        plan.items.isEmpty ||
+                        viewState.plan.items.isEmpty ||
                         viewModel.isExecuting ||
                         viewModel.isLoading ||
-                        executeBlockedByRunningTools
+                        viewState.runningTools.executeBlockedByRunningTools
                     )
 
                     if viewModel.isExecuting {
@@ -189,8 +194,8 @@ struct CleanupSectionView: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
-                    } else if executeBlockedByRunningTools {
-                        Text("Cleanup is blocked while tools are running (Xcode: \(runningXcodeInstances), Simulator app: \(runningSimulatorAppInstances), booted devices: \(bootedSimulatorDeviceCount)). Close tools or disable the block option.")
+                    } else if viewState.runningTools.executeBlockedByRunningTools {
+                        Text("Cleanup is blocked while tools are running (Xcode: \(viewState.runningTools.runningXcodeInstances), Simulator app: \(viewState.runningTools.runningSimulatorAppInstances), booted devices: \(viewState.runningTools.bootedSimulatorDeviceCount)). Close tools or disable the block option.")
                             .font(.caption)
                             .foregroundStyle(.orange)
                     } else {
@@ -209,11 +214,7 @@ struct CleanupSectionView: View {
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
     }
 
-    private func selectionScopeCard(
-        simulatorRuntimeByIdentifier: [String: SimulatorRuntimeRecord],
-        runtimeStaleReasonsByIdentifier: [String: [SimulatorRuntimeStaleReason]],
-        deviceStaleReasonsByUDID: [String: [SimulatorDeviceStaleReason]]
-    ) -> some View {
+    private func selectionScopeCard(viewState: CleanupViewState) -> some View {
         let cleanupEligibleFootprintComponents = AppPresentation.cleanupEligibleFootprintComponents(
             in: snapshot.storage
         )
@@ -308,7 +309,7 @@ struct CleanupSectionView: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(snapshot.simulator.runtimes) { runtime in
-                    let staleReasons = runtimeStaleReasonsByIdentifier[runtime.identifier] ?? []
+                    let staleReasons = viewState.runtimeStaleReasonsByIdentifier[runtime.identifier] ?? []
                     let isStale = !staleReasons.isEmpty
                     let hasBundlePath = runtime.bundlePath != nil
                     Toggle(isOn: simulatorRuntimeBinding(for: runtime.identifier)) {
@@ -371,13 +372,13 @@ struct CleanupSectionView: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(snapshot.simulator.devices) { device in
-                    let runtime = simulatorRuntimeByIdentifier[device.runtimeIdentifier]
+                    let runtime = viewState.simulatorRuntimeByIdentifier[device.runtimeIdentifier]
                     let runtimeName = runtime?.name ?? device.runtimeName ?? device.runtimeIdentifier
                     let runtimeVersion = runtime?.version ?? "Unknown"
                     let stateLabel = device.runningInstanceCount > 0
                         ? "\(device.state) (running x\(device.runningInstanceCount))"
                         : device.state
-                    let staleReasons = deviceStaleReasonsByUDID[device.udid] ?? []
+                    let staleReasons = viewState.deviceStaleReasonsByUDID[device.udid] ?? []
                     let isStale = !staleReasons.isEmpty
                     Toggle(isOn: simulatorDeviceBinding(for: device.udid)) {
                         HStack {
@@ -498,15 +499,8 @@ struct CleanupSectionView: View {
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
     }
 
-    private func staleArtifactWorkflowCard(
-        report: StaleArtifactReport,
-        plan: DryRunPlan,
-        executeBlockedByRunningTools: Bool,
-        runningXcodeInstances: Int,
-        runningSimulatorAppInstances: Int,
-        bootedSimulatorDeviceCount: Int
-    ) -> some View {
-        let groupedCandidates = Dictionary(grouping: report.candidates, by: \.kind)
+    private func staleArtifactWorkflowCard(viewState: CleanupViewState) -> some View {
+        let groupedCandidates = Dictionary(grouping: viewState.staleArtifactReport.candidates, by: \.kind)
         let orderedKinds = groupedCandidates.keys.sorted { lhs, rhs in
             let lhsOrder = AppPresentation.staleArtifactGroupOrder(for: lhs)
             let rhsOrder = AppPresentation.staleArtifactGroupOrder(for: rhs)
@@ -530,19 +524,19 @@ struct CleanupSectionView: View {
                     Text("Selected reclaim")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text(AppPresentation.formatBytes(plan.totalReclaimableBytes))
+                    Text(AppPresentation.formatBytes(viewState.staleArtifactPlan.totalReclaimableBytes))
                         .font(.title3.weight(.semibold))
-                    Text("Detected: \(report.candidates.count) | Selected: \(plan.items.count)")
+                    Text("Detected: \(viewState.staleArtifactReport.candidates.count) | Selected: \(viewState.staleArtifactPlan.items.count)")
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
             }
 
-            if !report.notes.isEmpty {
+            if !viewState.staleArtifactReport.notes.isEmpty {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Scan notes")
                         .font(.callout.weight(.medium))
-                    ForEach(Array(report.notes.enumerated()), id: \.offset) { _, note in
+                    ForEach(Array(viewState.staleArtifactReport.notes.enumerated()), id: \.offset) { _, note in
                         Text(note)
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -550,7 +544,7 @@ struct CleanupSectionView: View {
                 }
             }
 
-            if report.candidates.isEmpty {
+            if viewState.staleArtifactReport.candidates.isEmpty {
                 Text("No stale or orphaned simulator artifacts detected in the current scan.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -615,16 +609,16 @@ struct CleanupSectionView: View {
                 HStack(spacing: 10) {
                     Button("Clean Selected Stale/Orphaned Artifacts") {
                         viewModel.executeStaleArtifactCleanup(
-                            selectedCandidateIDs: selectionState.selectedStaleArtifactIDs(from: report),
+                            selectedCandidateIDs: selectionState.selectedStaleArtifactIDs(from: viewState.staleArtifactReport),
                             allowDirectDelete: selectionState.allowDirectDeleteFallback,
                             requireToolsStopped: selectionState.blockCleanupWhileToolsRunning
                         )
                     }
                     .disabled(
-                        plan.items.isEmpty ||
+                        viewState.staleArtifactPlan.items.isEmpty ||
                         viewModel.isExecuting ||
                         viewModel.isLoading ||
-                        executeBlockedByRunningTools
+                        viewState.runningTools.executeBlockedByRunningTools
                     )
 
                     if viewModel.isExecuting {
@@ -635,8 +629,8 @@ struct CleanupSectionView: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
-                    } else if executeBlockedByRunningTools {
-                        Text("Cleanup for these simulator items is blocked while tools are running (Xcode: \(runningXcodeInstances), Simulator app: \(runningSimulatorAppInstances), booted devices: \(bootedSimulatorDeviceCount)). Close the tools, or disable the block option above.")
+                    } else if viewState.runningTools.executeBlockedByRunningTools {
+                        Text("Cleanup for these simulator items is blocked while tools are running (Xcode: \(viewState.runningTools.runningXcodeInstances), Simulator app: \(viewState.runningTools.runningSimulatorAppInstances), booted devices: \(viewState.runningTools.bootedSimulatorDeviceCount)). Close the tools, or disable the block option above.")
                             .font(.caption)
                             .foregroundStyle(.orange)
                     } else {
@@ -743,6 +737,84 @@ struct CleanupSectionView: View {
                     selectionState.selectedStaleArtifactIDs.remove(id)
                 }
             }
+        )
+    }
+
+    private struct PrimaryCleanupLayout {
+        let useSplitLayout: Bool
+        let selectionWidth: CGFloat
+        let workflowWidth: CGFloat
+    }
+
+    private struct RunningToolState {
+        let runningXcodeInstances: Int
+        let runningSimulatorAppInstances: Int
+        let bootedSimulatorDeviceCount: Int
+        let executeBlockedByRunningTools: Bool
+    }
+
+    private struct CleanupViewState {
+        let selection: DryRunSelection
+        let plan: DryRunPlan
+        let staleArtifactReport: StaleArtifactReport
+        let staleArtifactPlan: DryRunPlan
+        let simulatorRuntimeByIdentifier: [String: SimulatorRuntimeRecord]
+        let runtimeStaleReasonsByIdentifier: [String: [SimulatorRuntimeStaleReason]]
+        let deviceStaleReasonsByUDID: [String: [SimulatorDeviceStaleReason]]
+        let runningTools: RunningToolState
+    }
+
+    private func makeViewState() -> CleanupViewState {
+        let selection = selectionState.selection(for: snapshot)
+        let plan = DryRunPlanner.makePlan(snapshot: snapshot, selection: selection)
+        let staleArtifactReport = viewModel.staleArtifactReport ?? StaleArtifactReport(
+            generatedAt: snapshot.scannedAt,
+            candidates: [],
+            totalReclaimableBytes: 0,
+            notes: []
+        )
+        let selectedStaleArtifactIDs = selectionState.selectedStaleArtifactIDs(from: staleArtifactReport)
+        let staleArtifactPlan = StaleArtifactPlanner.makePlan(
+            snapshot: snapshot,
+            report: staleArtifactReport,
+            selectedCandidateIDs: selectedStaleArtifactIDs,
+            now: Date(),
+            defaultToAllCandidatesWhenSelectionEmpty: false
+        )
+        let simulatorRuntimeByIdentifier = Dictionary(
+            uniqueKeysWithValues: snapshot.simulator.runtimes.map { ($0.identifier, $0) }
+        )
+        return CleanupViewState(
+            selection: selection,
+            plan: plan,
+            staleArtifactReport: staleArtifactReport,
+            staleArtifactPlan: staleArtifactPlan,
+            simulatorRuntimeByIdentifier: simulatorRuntimeByIdentifier,
+            runtimeStaleReasonsByIdentifier: AppPresentation.simulatorRuntimeStaleReasonsByIdentifier(in: snapshot),
+            deviceStaleReasonsByUDID: AppPresentation.simulatorDeviceStaleReasonsByUDID(in: snapshot),
+            runningTools: makeRunningToolState()
+        )
+    }
+
+    private func makeRunningToolState() -> RunningToolState {
+        let runningXcodeInstances = snapshot.runtimeTelemetry.totalXcodeRunningInstances
+        let runningSimulatorAppInstances = snapshot.runtimeTelemetry.totalSimulatorAppRunningInstances
+        let bootedSimulatorDeviceCount = snapshot.simulator.devices.filter { device in
+            if device.runningInstanceCount > 0 {
+                return true
+            }
+            let state = device.state.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return state == "booted" || state == "booting"
+        }.count
+        let runningToolsDetected =
+            runningXcodeInstances > 0 ||
+            runningSimulatorAppInstances > 0 ||
+            bootedSimulatorDeviceCount > 0
+        return RunningToolState(
+            runningXcodeInstances: runningXcodeInstances,
+            runningSimulatorAppInstances: runningSimulatorAppInstances,
+            bootedSimulatorDeviceCount: bootedSimulatorDeviceCount,
+            executeBlockedByRunningTools: selectionState.blockCleanupWhileToolsRunning && runningToolsDetected
         )
     }
 }
