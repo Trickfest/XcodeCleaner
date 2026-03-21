@@ -61,7 +61,7 @@ Prebuilt signed/notarized distribution is optional future work, not a current re
 - Read-only inventory and accounting:
   - Xcode installs, active developer directory, version/build/path, ownership, and safety classification.
   - Storage categories: Xcode apps, Derived Data, MobileDevice Crash Logs, Archives, iOS device support, Simulator data.
-  - Additional footprint components such as DocumentationCache, developer packages, Xcode/CoreSimulator logs, DVTDownloads, XCTestDevices, and smaller Xcode-managed state roots.
+  - Additional footprint components such as Documentation Cache, developer packages, Xcode/CoreSimulator logs, developer tool downloads, XCTest/Playground device-set state, and smaller Xcode-managed state roots.
   - Itemized simulator runtimes and simulator devices with metadata, size, stale markers, and running-state information.
   - Itemized physical device support directories with parsed metadata, modification dates, and size.
 - Runtime telemetry:
@@ -76,7 +76,7 @@ Prebuilt signed/notarized distribution is optional future work, not a current re
   - Shared dry-run planning with deterministic ordering, reclaim estimates, and plan notes.
   - Move-to-trash first, with optional direct-delete fallback.
   - Known simulator runtimes and known simulator devices are removed through `simctl`; filesystem deletion remains for ordinary cache/artifact paths and orphaned leftovers.
-  - DocumentationCache, Xcode logs, and CoreSimulator logs are available as explicit opt-in cleanup targets; they are not part of the default-safe cleanup set.
+  - Documentation Cache, Xcode Logs, and CoreSimulator Logs are available as explicit opt-in cleanup targets; they are not part of the default-safe cleanup set.
   - Guardrails for active/running Xcode installs and running/booted simulator devices.
   - Optional global block while Xcode or the Simulator app is running.
 - Targeted cleanup controls:
@@ -106,7 +106,7 @@ Currently included in this build:
 - MobileDevice crash logs
 - Archives
 - Physical device support directories under `~/Library/Developer/Xcode/iOS DeviceSupport`
-- CoreSimulator device data, runtime bundles, and simulator caches
+- CoreSimulator device data, runtime bundles, simulator caches, and temp state
 - Documentation cache under `~/Library/Developer/Xcode/DocumentationCache` (explicit opt-in cleanup)
 - Developer packages under `~/Library/Developer/Packages` (counted only)
 - Xcode logs under `~/Library/Logs/Xcode` (explicit opt-in cleanup)
@@ -129,7 +129,7 @@ The current macOS app is organized into four workflow sections in the sidebar.
 
 ### Overview
 
-- Tool activity summary with running Xcode count, running Simulator app count, stale runtime count, and stale device count.
+- Tool activity summary with running Xcode count, running Simulator app count, stale runtime count, stale device count, and orphaned simulator artifact count.
 - Orphaned simulator runtime reporting, including on-disk paths for manual cleanup when detected.
 - Storage overview cards for every scanned category, including path lists, ownership summaries, and safety classification.
 - Additional counted Xcode storage cards for roots that contribute to `Total Xcode Footprint` but may be counted-only or explicit opt-in cleanup.
@@ -150,8 +150,8 @@ The current macOS app is organized into four workflow sections in the sidebar.
   - `Archives`
   - `Simulator Data`
 - Inline `Affects:` summaries and current resolved roots for aggregate cleanup categories.
-- Additional Cleanup Options for:
-  - `DocumentationCache`
+- Other Cleanup Options for:
+  - `Documentation Cache`
   - `Xcode Logs`
   - `CoreSimulator Logs`
 - Itemized selection for:
@@ -161,7 +161,7 @@ The current macOS app is organized into four workflow sections in the sidebar.
   - Physical device support directories
 - Inline stale markers for simulator runtimes and devices.
 - Separate stale/orphaned simulator review card with nothing selected by default and manual-only orphaned runtime reporting.
-- Cleanup execution status and the latest execution report.
+- Cleanup execution status plus the latest standard and stale/orphaned execution reports in their respective workflow cards.
 
 ### Automation
 
@@ -180,13 +180,13 @@ The current macOS app is organized into four workflow sections in the sidebar.
   - Minimum reclaim threshold
   - Aggregate category selection only
   - Skip-if-tools-running and direct-delete toggles
-- Automation intentionally does not cover explicit opt-in roots such as `DocumentationCache`, `Xcode Logs`, or `CoreSimulator Logs`.
+- Automation intentionally does not cover explicit opt-in roots such as `Documentation Cache`, `Xcode Logs`, or `CoreSimulator Logs`.
 - Automation also does not cover stale/orphaned simulator cleanup or itemized cleanup targets such as simulator runtimes, simulator devices, Xcode installs, or physical device support directories.
 - Shortcut to the Reports section for exports and historical reporting.
 
 ### Reports
 
-- Report status summary showing loaded history/trend counts and the last cleanup reclaim total when available.
+- Report status summary showing loaded history/trend counts and the latest standard and stale/orphaned cleanup reclaim totals when available.
 - All-time and rolling-window automation trend summaries.
 - Recent automation run history.
 - Export actions for:
@@ -419,7 +419,8 @@ The command verifies the resulting active developer directory after `xcode-selec
   - `MobileDevice Crash Logs`
   - `Archives`
   - `Simulator Data`
-- `Simulator Data` covers CoreSimulator devices, caches, temp state under `~/Library/Developer/CoreSimulator/Temp`, and installed simulator runtime bundles.
+- `Simulator Data` covers CoreSimulator devices plus cache/temp state under both `~/Library/Developer/CoreSimulator` and `/Library/Developer/CoreSimulator`, along with installed simulator runtime bundles.
+- Non-empty system CoreSimulator cache/temp roots under `/Library/Developer/CoreSimulator` are counted and shown in the plan, but currently surface as blocked/manual-only rather than being force-deleted without elevated privileges.
 - GUI itemized cleanup is available for:
   - Simulator runtimes
   - Simulator devices

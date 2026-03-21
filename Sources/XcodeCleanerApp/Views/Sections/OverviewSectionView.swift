@@ -110,7 +110,7 @@ struct OverviewSectionView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Additional Counted Xcode Storage")
                         .font(.subheadline.weight(.semibold))
-                    Text("These roots increase Total Xcode Footprint. Some are available as extra cleanup options; others are included for accounting only.")
+                    Text("These roots increase Total Xcode Footprint. Some are available in Other Cleanup Options; others are included for accounting only.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
