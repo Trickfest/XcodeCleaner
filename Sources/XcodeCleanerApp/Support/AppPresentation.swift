@@ -102,17 +102,13 @@ enum AppPresentation {
         return categoryItems + countedOnlyItems
     }
 
-    static var countedOnlyFootprintComponentNote: String {
-        "Included in the total footprint only; not removable in this build."
-    }
-
     static func additionalFootprintComponentNote(
         for kind: CountedFootprintComponentKind
-    ) -> String {
+    ) -> String? {
         if CleanupPolicies.policy(for: kind).surface == .explicitOptIn {
-            return "Available as an optional cleanup item; not selected by default."
+            return "Cleanup available in Other Cleanup Options."
         }
-        return countedOnlyFootprintComponentNote
+        return nil
     }
 
     static func visibleAdditionalFootprintComponents(

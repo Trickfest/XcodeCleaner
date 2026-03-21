@@ -135,9 +135,11 @@ struct OverviewSectionView: View {
                             Text("Ownership: \(component.ownershipSummary)")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                            Text(AppPresentation.additionalFootprintComponentNote(for: component.kind))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                            if let note = AppPresentation.additionalFootprintComponentNote(for: component.kind) {
+                                Text(note)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                         .padding(10)
                         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
