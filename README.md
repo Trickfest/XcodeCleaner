@@ -1,12 +1,20 @@
 # XcodeCleaner
 
-GUI-first native macOS tooling (Swift + SwiftUI) to inventory, understand, and clean Xcode-related disk usage.
+Native macOS tooling for understanding and cleaning Xcode-related disk usage.
+
+XcodeCleaner helps you answer three practical questions:
+
+- What is Xcode actually using on this Mac?
+- What is safe to remove?
+- What will I get back if I clean it up?
+
+It inventories Xcode installs, Derived Data, simulator runtimes and devices, device support files, logs, caches, and other standard Xcode/CoreSimulator storage. The app then turns that inventory into a workflow-oriented GUI with dry-run planning, reclaim estimates, and guarded cleanup actions.
 
 ## Version
 
 - Current version: `1.0`
 
-This repository now presents itself as version `1.0`, while some cleanup, QA, documentation, and release-adjacent polish work is still ongoing.
+This repository currently presents itself as version `1.0`. Ongoing work is focused on polish, documentation, and release-adjacent improvements rather than large scope changes.
 
 ## Requirements
 
@@ -16,9 +24,8 @@ This repository now presents itself as version `1.0`, while some cleanup, QA, do
 
 ## Product Positioning
 
-For `1.0`, the macOS GUI is the primary product surface.
+For `1.0`, the macOS GUI is the primary product surface and the intended experience for most users.
 
-- The GUI is the intended experience for most users.
 - The GUI is where workflow polish, discoverability, and release quality are being prioritized.
 - The CLI remains available as a secondary power-user surface for scripting, automation, JSON output, and development/testing.
 - GUI and CLI share the same core engine, but they are not being treated as equal-scope surfaces for `1.0`, and full parity is not a release requirement.
