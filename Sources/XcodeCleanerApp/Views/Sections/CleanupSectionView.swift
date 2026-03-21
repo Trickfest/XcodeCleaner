@@ -259,11 +259,8 @@ struct CleanupSectionView: View {
             }
 
             if !cleanupEligibleFootprintComponents.isEmpty {
-                Text("Additional Cleanup Options")
+                Text("Other Cleanup Options")
                     .font(.callout.weight(.medium))
-                Text("These options are available on purpose, but they stay out of the default cleanup selection.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
 
                 ForEach(cleanupEligibleFootprintComponents) { component in
                     Toggle(isOn: countedFootprintComponentBinding(for: component.kind)) {

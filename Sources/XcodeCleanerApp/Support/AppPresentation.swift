@@ -110,7 +110,7 @@ enum AppPresentation {
         for kind: CountedFootprintComponentKind
     ) -> String {
         if CleanupPolicies.policy(for: kind).surface == .explicitOptIn {
-            return "Available as an extra cleanup option; never included in the default cleanup selection."
+            return "Available as an optional cleanup item; not selected by default."
         }
         return countedOnlyFootprintComponentNote
     }
