@@ -479,7 +479,9 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
         let explicitPaths =
             [
                 homeDirectoryURL.appendingPathComponent("Library/Developer/CoreSimulator/Caches", isDirectory: true),
+                homeDirectoryURL.appendingPathComponent("Library/Developer/CoreSimulator/Temp", isDirectory: true),
                 URL(filePath: "/Library/Developer/CoreSimulator/Caches", directoryHint: .isDirectory),
+                URL(filePath: "/Library/Developer/CoreSimulator/Temp", directoryHint: .isDirectory),
             ]
             + inventory.devices.map { URL(filePath: $0.dataPath, directoryHint: .isDirectory) }
             + inventory.runtimes.compactMap { runtime in

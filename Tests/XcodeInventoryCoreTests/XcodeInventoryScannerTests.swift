@@ -450,7 +450,11 @@ struct XcodeInventoryScannerTests {
         let simulatorCachesPath = fakeHome
             .appendingPathComponent("Library/Developer/CoreSimulator/Caches", isDirectory: true)
             .path
+        let simulatorTempPath = fakeHome
+            .appendingPathComponent("Library/Developer/CoreSimulator/Temp", isDirectory: true)
+            .path
         let systemSimulatorCachesPath = "/Library/Developer/CoreSimulator/Caches"
+        let systemSimulatorTempPath = "/Library/Developer/CoreSimulator/Temp"
         let legacyRuntimeRootPath = "/Library/Developer/CoreSimulator/Profiles/Runtimes"
         let simulatorDevice1Path = fakeHome
             .appendingPathComponent("Library/Developer/CoreSimulator/Devices/SIM-001", isDirectory: true)
@@ -466,7 +470,9 @@ struct XcodeInventoryScannerTests {
             pathSizer: StubPathSizer(sizeByPath: [
                 simulatorDevicesRootPath: 9_000,
                 simulatorCachesPath: 50,
+                simulatorTempPath: 30,
                 systemSimulatorCachesPath: 60,
+                systemSimulatorTempPath: 40,
                 legacyRuntimeRootPath: 8_000,
                 simulatorDevice1Path: 100,
                 simulatorDevice2Path: 200,
@@ -509,10 +515,12 @@ struct XcodeInventoryScannerTests {
         let snapshot = scanner.scan()
         let simulatorCategory = snapshot.storage.categories.first(where: { $0.kind == .simulatorData })!
 
-        #expect(simulatorCategory.bytes == 810)
+        #expect(simulatorCategory.bytes == 880)
         #expect(Set(simulatorCategory.paths) == Set([
             simulatorCachesPath,
+            simulatorTempPath,
             systemSimulatorCachesPath,
+            systemSimulatorTempPath,
             simulatorDevice1Path,
             simulatorDevice2Path,
             runtimeBundlePath,
@@ -521,7 +529,7 @@ struct XcodeInventoryScannerTests {
         #expect(simulatorCategory.paths.contains(legacyRuntimeRootPath) == false)
         #expect(snapshot.simulator.devices.map(\.sizeInBytes) == [100, 200])
         #expect(snapshot.simulator.runtimes.map(\.sizeInBytes) == [400])
-        #expect(snapshot.storage.totalBytes == 810)
+        #expect(snapshot.storage.totalBytes == 880)
     }
 
     @Test("Scanner total footprint includes volume-backed runtime bundles and ignores oversized legacy parent roots")

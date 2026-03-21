@@ -24,8 +24,10 @@ struct CleanupPolicyTests {
         #expect(policy.guardrail == .simulatorStopped)
         #expect(policy.deletionMechanism == .mixed)
         #expect(policy.cleanupDescription.contains("simulator devices"))
+        #expect(policy.cleanupDescription.contains("temp"))
         #expect(policy.affectedRootsSummary.contains("~/Library/Developer/CoreSimulator"))
         #expect(policy.affectedRootsSummary.contains("/Library/Developer/CoreSimulator"))
+        #expect(policy.affectedRootsSummary.contains("~/Library/Developer/CoreSimulator/Temp"))
     }
 
     @Test("Documentation Cache policy is explicit opt-in and Xcode-guarded")

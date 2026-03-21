@@ -298,6 +298,26 @@ public struct CleanupExecutor: @unchecked Sendable {
         }
 
         let reclaimableBytes = pathSizer.allocatedSize(at: url)
+        if reclaimableBytes == 0 {
+            return CleanupPathResult(
+                path: normalizedPath,
+                status: .skippedNoReclaim,
+                operation: .none,
+                reclaimedBytes: 0,
+                message: "Skipped: path currently reclaims no space."
+            )
+        }
+
+        if isSystemCoreSimulatorCacheOrTempPath(normalizedPath) {
+            return CleanupPathResult(
+                path: normalizedPath,
+                status: .blocked,
+                operation: .none,
+                reclaimedBytes: 0,
+                message: "Blocked: system CoreSimulator cache/temp paths under /Library require admin-managed cleanup and are not deleted by this app."
+            )
+        }
+
         do {
             try fileOperator.moveToTrash(at: url)
             return CleanupPathResult(
@@ -343,7 +363,9 @@ public struct CleanupExecutor: @unchecked Sendable {
         let succeeded = pathResults.filter { $0.status == .succeeded }.count
         let blocked = pathResults.filter { $0.status == .blocked }.count
         let failed = pathResults.filter { $0.status == .failed }.count
-        let skipped = pathResults.filter { $0.status == .skippedMissing }.count
+        let skipped = pathResults.filter {
+            $0.status == .skippedMissing || $0.status == .skippedNoReclaim
+        }.count
         let reclaimedBytes = pathResults.reduce(Int64(0)) { partial, result in
             partial + result.reclaimedBytes
         }
@@ -381,10 +403,20 @@ public struct CleanupExecutor: @unchecked Sendable {
             status: status,
             operation: operation,
             reclaimedBytes: reclaimedBytes,
-            message: "Paths succeeded: \(succeeded), blocked: \(blocked), failed: \(failed), missing: \(skipped).",
+            message: "Paths succeeded: \(succeeded), blocked: \(blocked), failed: \(failed), skipped: \(skipped).",
             pathResults: pathResults,
             recordedAt: now()
         )
+    }
+
+    private func isSystemCoreSimulatorCacheOrTempPath(_ path: String) -> Bool {
+        let systemRoots = [
+            "/Library/Developer/CoreSimulator/Caches",
+            "/Library/Developer/CoreSimulator/Temp",
+        ]
+        return systemRoots.contains { root in
+            path == root || path.hasPrefix(root + "/")
+        }
     }
 
     private func blockReason(for item: DryRunPlanItem, in snapshot: XcodeInventorySnapshot) -> String? {

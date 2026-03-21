@@ -120,9 +120,9 @@ public enum CleanupPolicies {
                 surface: .optional,
                 guardrail: .simulatorStopped,
                 deletionMechanism: .mixed,
-                cleanupDescription: "Deletes simulator devices, simulator caches, and installed simulator runtimes tracked in CoreSimulator storage.",
-                affectedRootsSummary: "~/Library/Developer/CoreSimulator/Devices, ~/Library/Developer/CoreSimulator/Caches, and installed runtime locations under /Library/Developer/CoreSimulator",
-                footprintDescription: "CoreSimulator device data, runtime bundles, and simulator caches."
+                cleanupDescription: "Deletes simulator devices, simulator caches, temp CoreSimulator state, and installed simulator runtimes tracked in CoreSimulator storage.",
+                affectedRootsSummary: "~/Library/Developer/CoreSimulator/Devices, ~/Library/Developer/CoreSimulator/Caches, ~/Library/Developer/CoreSimulator/Temp, and installed runtime locations under /Library/Developer/CoreSimulator",
+                footprintDescription: "CoreSimulator device data, runtime bundles, caches, and temp state."
             )
         }
     }

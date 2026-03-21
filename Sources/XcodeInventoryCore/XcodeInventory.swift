@@ -523,6 +523,7 @@ public enum CleanupPathStatus: String, Codable, Sendable {
     case blocked
     case failed
     case skippedMissing
+    case skippedNoReclaim
 }
 
 public struct CleanupPathResult: Codable, Equatable, Identifiable, Sendable {

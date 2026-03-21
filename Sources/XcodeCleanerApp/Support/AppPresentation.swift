@@ -311,6 +311,8 @@ enum AppPresentation {
             return "Failed"
         case .skippedMissing:
             return "Skipped missing"
+        case .skippedNoReclaim:
+            return "Skipped no reclaim"
         }
     }
 
@@ -323,6 +325,8 @@ enum AppPresentation {
         case .failed:
             return .red
         case .skippedMissing:
+            return .secondary
+        case .skippedNoReclaim:
             return .secondary
         }
     }

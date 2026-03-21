@@ -113,6 +113,102 @@ struct CleanupExecutorTests {
         #expect(withFallbackReport.results.first?.operation == .directDelete)
     }
 
+    @Test("Cleanup executor skips zero-byte system CoreSimulator cache roots")
+    func executorSkipsZeroByteSystemCoreSimulatorCacheRoots() {
+        let systemCachePath = "/Library/Developer/CoreSimulator/Caches"
+        let snapshot = XcodeInventorySnapshot(
+            scannedAt: Date(timeIntervalSince1970: 100),
+            activeDeveloperDirectoryPath: nil,
+            installs: [],
+            storage: XcodeStorageUsage(
+                categories: [
+                    StorageCategoryUsage(
+                        kind: .simulatorData,
+                        title: "Simulator Data",
+                        bytes: 0,
+                        paths: [systemCachePath],
+                        ownershipSummary: "Owned by CoreSimulator runtimes and device sandboxes",
+                        safetyClassification: .conditionallySafe
+                    ),
+                ],
+                totalBytes: 0
+            ),
+            simulator: SimulatorInventory(devices: [], runtimes: []),
+            runtimeTelemetry: RuntimeTelemetry(totalXcodeRunningInstances: 0, totalSimulatorAppRunningInstances: 0)
+        )
+        let selection = DryRunSelection(
+            selectedCategoryKinds: [.simulatorData],
+            selectedSimulatorDeviceUDIDs: []
+        )
+        let executor = CleanupExecutor(
+            fileOperator: StubCleanupFileOperator(
+                existingPaths: [systemCachePath],
+                moveToTrashFailPaths: [systemCachePath],
+                directDeleteFailPaths: [systemCachePath]
+            ),
+            pathSizer: StubExecutionPathSizer(sizeByPath: [systemCachePath: 0]),
+            now: { Date(timeIntervalSince1970: 915) }
+        )
+
+        let report = executor.execute(snapshot: snapshot, selection: selection, allowDirectDelete: true)
+
+        #expect(report.succeededCount == 1)
+        #expect(report.blockedCount == 0)
+        #expect(report.failedCount == 0)
+        #expect(report.totalReclaimedBytes == 0)
+        #expect(report.results.first?.status == .succeeded)
+        #expect(report.results.first?.pathResults.first?.status == .skippedNoReclaim)
+        #expect(report.results.first?.pathResults.first?.message.contains("reclaims no space") == true)
+    }
+
+    @Test("Cleanup executor blocks non-empty system CoreSimulator cache roots as manual-only")
+    func executorBlocksSystemCoreSimulatorCacheRoots() {
+        let systemCachePath = "/Library/Developer/CoreSimulator/Caches"
+        let snapshot = XcodeInventorySnapshot(
+            scannedAt: Date(timeIntervalSince1970: 100),
+            activeDeveloperDirectoryPath: nil,
+            installs: [],
+            storage: XcodeStorageUsage(
+                categories: [
+                    StorageCategoryUsage(
+                        kind: .simulatorData,
+                        title: "Simulator Data",
+                        bytes: 128,
+                        paths: [systemCachePath],
+                        ownershipSummary: "Owned by CoreSimulator runtimes and device sandboxes",
+                        safetyClassification: .conditionallySafe
+                    ),
+                ],
+                totalBytes: 128
+            ),
+            simulator: SimulatorInventory(devices: [], runtimes: []),
+            runtimeTelemetry: RuntimeTelemetry(totalXcodeRunningInstances: 0, totalSimulatorAppRunningInstances: 0)
+        )
+        let selection = DryRunSelection(
+            selectedCategoryKinds: [.simulatorData],
+            selectedSimulatorDeviceUDIDs: []
+        )
+        let executor = CleanupExecutor(
+            fileOperator: StubCleanupFileOperator(
+                existingPaths: [systemCachePath],
+                moveToTrashFailPaths: [systemCachePath],
+                directDeleteFailPaths: [systemCachePath]
+            ),
+            pathSizer: StubExecutionPathSizer(sizeByPath: [systemCachePath: 128]),
+            now: { Date(timeIntervalSince1970: 916) }
+        )
+
+        let report = executor.execute(snapshot: snapshot, selection: selection, allowDirectDelete: true)
+
+        #expect(report.succeededCount == 0)
+        #expect(report.blockedCount == 1)
+        #expect(report.failedCount == 0)
+        #expect(report.totalReclaimedBytes == 0)
+        #expect(report.results.first?.status == .blocked)
+        #expect(report.results.first?.pathResults.first?.status == .blocked)
+        #expect(report.results.first?.pathResults.first?.message.contains("admin-managed cleanup") == true)
+    }
+
     @Test("Cleanup executor can globally block cleanup when tools are running")
     func executorGlobalRunningToolsBlock() {
         let snapshot = makeExecutionSnapshot()
@@ -627,7 +723,10 @@ struct CleanupExecutorTests {
 
         let executor = CleanupExecutor(
             fileOperator: StubCleanupFileOperator(
-                existingPaths: ["/tmp/CoreSimulator/Caches/dyld-cache"],
+                existingPaths: [
+                    "/tmp/CoreSimulator/Caches/dyld-cache",
+                    "/tmp/CoreSimulator/Temp/BackgroundDelete/runtime-delete-marker",
+                ],
                 moveToTrashFailPaths: []
             ),
             simulatorRuntimeManager: runtimeManager,
@@ -637,6 +736,7 @@ struct CleanupExecutorTests {
                     "/tmp/CoreSimulator/Devices/SIM-SHUT": 60,
                     "/tmp/CoreSimulator/Profiles/Runtimes/iOS-19.simruntime": 70,
                     "/tmp/CoreSimulator/Caches/dyld-cache": 15,
+                    "/tmp/CoreSimulator/Temp/BackgroundDelete/runtime-delete-marker": 25,
                 ]
             ),
             now: { Date(timeIntervalSince1970: 951) }
@@ -647,13 +747,14 @@ struct CleanupExecutorTests {
         #expect(report.results.count == 1)
         #expect(report.succeededCount == 1)
         #expect(report.failedCount == 0)
-        #expect(report.totalReclaimedBytes == 145)
+        #expect(report.totalReclaimedBytes == 170)
         #expect(report.results.first?.operation == .mixed)
 
         let pathResults = Dictionary(uniqueKeysWithValues: report.results[0].pathResults.map { ($0.path, $0) })
         #expect(pathResults["/tmp/CoreSimulator/Devices/SIM-SHUT"]?.operation == .simctlDelete)
         #expect(pathResults["/tmp/CoreSimulator/Profiles/Runtimes/iOS-19.simruntime"]?.operation == .simctlDelete)
         #expect(pathResults["/tmp/CoreSimulator/Caches/dyld-cache"]?.operation == .moveToTrash)
+        #expect(pathResults["/tmp/CoreSimulator/Temp/BackgroundDelete/runtime-delete-marker"]?.operation == .moveToTrash)
         #expect(deviceManager.deletedUDIDs == ["SIM-SHUT"])
         #expect(runtimeManager.deletedIdentifiers == ["runtime-delete-1"])
     }
@@ -1024,17 +1125,18 @@ private func makeAggregateSimulatorDataSnapshot() -> XcodeInventorySnapshot {
             StorageCategoryUsage(
                 kind: .simulatorData,
                 title: "Simulator Data",
-                bytes: 145,
+                bytes: 170,
                 paths: [
                     "/tmp/CoreSimulator/Devices/SIM-SHUT",
                     "/tmp/CoreSimulator/Profiles/Runtimes/iOS-19.simruntime",
                     "/tmp/CoreSimulator/Caches/dyld-cache",
+                    "/tmp/CoreSimulator/Temp/BackgroundDelete/runtime-delete-marker",
                 ],
                 ownershipSummary: "Owned by CoreSimulator devices, runtimes, and caches",
                 safetyClassification: .conditionallySafe
             ),
         ],
-        totalBytes: 145
+        totalBytes: 170
     )
 
     return XcodeInventorySnapshot(

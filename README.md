@@ -419,6 +419,7 @@ The command verifies the resulting active developer directory after `xcode-selec
   - `MobileDevice Crash Logs`
   - `Archives`
   - `Simulator Data`
+- `Simulator Data` covers CoreSimulator devices, caches, temp state under `~/Library/Developer/CoreSimulator/Temp`, and installed simulator runtime bundles.
 - GUI itemized cleanup is available for:
   - Simulator runtimes
   - Simulator devices
