@@ -14,6 +14,16 @@ It inventories Xcode installs, Derived Data, simulator runtimes and devices, dev
 
 XcodeCleaner performs real cleanup actions against Xcode, CoreSimulator, and related developer storage on your Mac. Review dry runs carefully, use the built-in guardrails, and make sure you have backups and a recovery path you trust before deleting anything important. Use it at your own risk.
 
+## Screenshots
+
+### Overview
+
+![Overview tab](docs/screenshots/overview.png)
+
+### Cleanup
+
+![Cleanup workflow](docs/screenshots/cleanup.png)
+
 ## Version
 
 - Current version: `1.0`
