@@ -1420,16 +1420,36 @@ public struct ProcessCommandRunner: CommandRunning {
         process.executableURL = URL(fileURLWithPath: launchPath)
         process.arguments = arguments
 
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
+        let temporaryDirectoryURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "XcodeCleaner-ProcessCommandRunner-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: temporaryDirectoryURL, withIntermediateDirectories: true)
+
+        let standardOutputURL = temporaryDirectoryURL.appendingPathComponent("stdout.txt", isDirectory: false)
+        let standardErrorURL = temporaryDirectoryURL.appendingPathComponent("stderr.txt", isDirectory: false)
+        FileManager.default.createFile(atPath: standardOutputURL.path, contents: nil)
+        FileManager.default.createFile(atPath: standardErrorURL.path, contents: nil)
+
+        let standardOutputHandle = try FileHandle(forWritingTo: standardOutputURL)
+        let standardErrorHandle = try FileHandle(forWritingTo: standardErrorURL)
+        defer {
+            try? standardOutputHandle.close()
+            try? standardErrorHandle.close()
+            try? FileManager.default.removeItem(at: temporaryDirectoryURL)
+        }
+
+        process.standardOutput = standardOutputHandle
+        process.standardError = standardErrorHandle
 
         try process.run()
         process.waitUntilExit()
 
-        let standardOutputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-        let standardErrorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+        try standardOutputHandle.close()
+        try standardErrorHandle.close()
+
+        let standardOutputData = try Data(contentsOf: standardOutputURL)
+        let standardErrorData = try Data(contentsOf: standardErrorURL)
         let standardError = String(decoding: standardErrorData, as: UTF8.self)
             .trimmingCharacters(in: .whitespacesAndNewlines)
 

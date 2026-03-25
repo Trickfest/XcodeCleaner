@@ -3,6 +3,17 @@ import Testing
 @testable import XcodeInventoryCore
 
 struct XcodeInventoryScannerTests {
+    @Test("Process command runner captures large command output without deadlocking")
+    func processCommandRunnerCapturesLargeStandardOutput() throws {
+        let output = try ProcessCommandRunner().run(
+            launchPath: "/usr/bin/perl",
+            arguments: ["-e", "print 'A' x 200000"]
+        )
+
+        #expect(output.count == 200000)
+        #expect(output.allSatisfy { $0 == "A" })
+    }
+
     @Test("Simctl runtime listing provider captures delete-specific runtime identifiers and filters stale volume-backed runtime entries")
     func simctlRuntimeListingProviderCapturesDeleteIdentifiers() {
         let commandRunner = StubCommandRunner(
