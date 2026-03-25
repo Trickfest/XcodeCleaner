@@ -5,23 +5,39 @@ struct CleanupSectionView: View {
     @ObservedObject var viewModel: InventoryViewModel
     let snapshot: XcodeInventorySnapshot
 
-    @State private var selectionState = CleanupSelectionState()
+    @State private var selectionState: CleanupSelectionState
+    @State private var viewState: CleanupViewState
+
+    init(viewModel: InventoryViewModel, snapshot: XcodeInventorySnapshot) {
+        self._viewModel = ObservedObject(wrappedValue: viewModel)
+        self.snapshot = snapshot
+
+        let initialSelectionState = CleanupSelectionState()
+        _selectionState = State(initialValue: initialSelectionState)
+        _viewState = State(
+            initialValue: Self.makeViewState(
+                snapshot: snapshot,
+                selectionState: initialSelectionState,
+                staleArtifactReport: viewModel.staleArtifactReport
+            )
+        )
+    }
 
     private enum LayoutMetrics {
         static let sectionSpacing: CGFloat = 16
-        static let splitThreshold: CGFloat = 1_240
         static let workflowWidthFraction: CGFloat = 0.34
         static let minWorkflowWidth: CGFloat = 380
+        static let idealWorkflowWidth: CGFloat = 440
         static let maxWorkflowWidth: CGFloat = 520
         static let minSelectionWidth: CGFloat = 420
+        static let rowSpacing: CGFloat = 12
+        static let splitThreshold = minSelectionWidth + minWorkflowWidth + sectionSpacing
     }
 
     var body: some View {
-        let viewState = makeViewState()
-
         GeometryReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: LayoutMetrics.sectionSpacing) {
+                LazyVStack(alignment: .leading, spacing: LayoutMetrics.sectionSpacing) {
                     primaryCleanupPanels(
                         availableWidth: proxy.size.width,
                         viewState: viewState
@@ -33,6 +49,30 @@ struct CleanupSectionView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+        }
+        .task(
+            id: PlanningInputs(
+                snapshot: snapshot,
+                selectionState: selectionState,
+                staleArtifactReport: viewModel.staleArtifactReport
+            )
+        ) {
+            let snapshot = snapshot
+            let selectionState = selectionState
+            let staleArtifactReport = viewModel.staleArtifactReport
+            let refreshedViewState = await Task.detached(priority: .userInitiated) {
+                Self.makeViewState(
+                    snapshot: snapshot,
+                    selectionState: selectionState,
+                    staleArtifactReport: staleArtifactReport
+                )
+            }
+            .value
+
+            guard !Task.isCancelled else {
+                return
+            }
+            viewState = refreshedViewState
         }
     }
 
@@ -81,7 +121,7 @@ struct CleanupSectionView: View {
         return PrimaryCleanupLayout(
             useSplitLayout: availableWidth >= LayoutMetrics.splitThreshold,
             selectionWidth: selectionWidth,
-            workflowWidth: workflowWidth
+            workflowWidth: min(workflowWidth, LayoutMetrics.idealWorkflowWidth)
         )
     }
 
@@ -128,26 +168,24 @@ struct CleanupSectionView: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(viewState.plan.items) { item in
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
+                    responsiveValueRow(
+                        valueText: AppPresentation.formatBytes(item.reclaimableBytes)
+                    ) {
+                        VStack(alignment: .leading, spacing: 4) {
                             Text(item.title)
                                 .font(.callout.weight(.medium))
-                            Spacer()
-                            Text(AppPresentation.formatBytes(item.reclaimableBytes))
-                                .font(.callout.monospacedDigit())
-                                .foregroundStyle(.secondary)
-                        }
-                        Text("Kind: \(item.kind.rawValue), Safety: \(item.safetyClassification.rawValue)\(item.storageCategoryKind.map { ", Category: \($0.rawValue)" } ?? "")")
-                            .font(.caption.monospaced())
-                            .foregroundStyle(AppPresentation.color(for: item.safetyClassification))
-                        Text("Ownership: \(item.ownershipSummary)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        if !item.paths.isEmpty {
-                            Text(item.paths.joined(separator: "\n"))
+                            Text("Kind: \(item.kind.rawValue), Safety: \(item.safetyClassification.rawValue)\(item.storageCategoryKind.map { ", Category: \($0.rawValue)" } ?? "")")
                                 .font(.caption.monospaced())
+                                .foregroundStyle(AppPresentation.color(for: item.safetyClassification))
+                            Text("Ownership: \(item.ownershipSummary)")
+                                .font(.caption)
                                 .foregroundStyle(.secondary)
-                                .textSelection(.enabled)
+                            if !item.paths.isEmpty {
+                                Text(item.paths.joined(separator: "\n"))
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                            }
                         }
                     }
                     .padding(8)
@@ -174,7 +212,7 @@ struct CleanupSectionView: View {
                 HStack(spacing: 10) {
                     Button("Execute Cleanup") {
                         viewModel.execute(
-                            selection: viewState.selection,
+                            selection: selectionState.selection(for: snapshot),
                             allowDirectDelete: selectionState.allowDirectDeleteFallback,
                             requireToolsStopped: selectionState.blockCleanupWhileToolsRunning
                         )
@@ -215,11 +253,7 @@ struct CleanupSectionView: View {
     }
 
     private func selectionScopeCard(viewState: CleanupViewState) -> some View {
-        let cleanupEligibleFootprintComponents = AppPresentation.cleanupEligibleFootprintComponents(
-            in: snapshot.storage
-        )
-
-        return VStack(alignment: .leading, spacing: 10) {
+        LazyVStack(alignment: .leading, spacing: 10) {
             Text("Select Cleanup Scope")
                 .font(.subheadline.weight(.semibold))
 
@@ -232,7 +266,9 @@ struct CleanupSectionView: View {
                 category.kind != .xcodeApplications && category.kind != .deviceSupport
             }) { category in
                 Toggle(isOn: categoryBinding(for: category.kind)) {
-                    HStack(alignment: .top) {
+                    responsiveValueRow(
+                        valueText: AppPresentation.formatBytes(category.bytes)
+                    ) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(category.title)
                             Text(AppPresentation.cleanupCategoryHelpText(for: category.kind))
@@ -251,21 +287,19 @@ struct CleanupSectionView: View {
                                     .textSelection(.enabled)
                             }
                         }
-                        Spacer()
-                        Text(AppPresentation.formatBytes(category.bytes))
-                            .font(.callout.monospacedDigit())
-                            .foregroundStyle(.secondary)
                     }
                 }
             }
 
-            if !cleanupEligibleFootprintComponents.isEmpty {
+            if !viewState.cleanupEligibleFootprintComponents.isEmpty {
                 Text("Other Cleanup Options")
                     .font(.callout.weight(.medium))
 
-                ForEach(cleanupEligibleFootprintComponents) { component in
+                ForEach(viewState.cleanupEligibleFootprintComponents) { component in
                     Toggle(isOn: countedFootprintComponentBinding(for: component.kind)) {
-                        HStack {
+                        responsiveValueRow(
+                            valueText: AppPresentation.formatBytes(component.bytes)
+                        ) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(component.title)
                                 Text(AppPresentation.cleanupFootprintComponentHelpText(for: component.kind))
@@ -281,10 +315,6 @@ struct CleanupSectionView: View {
                                         .textSelection(.enabled)
                                 }
                             }
-                            Spacer()
-                            Text(AppPresentation.formatBytes(component.bytes))
-                                .font(.callout.monospacedDigit())
-                                .foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -313,7 +343,9 @@ struct CleanupSectionView: View {
                     let isStale = !staleReasons.isEmpty
                     let hasBundlePath = runtime.bundlePath != nil
                     Toggle(isOn: simulatorRuntimeBinding(for: runtime.identifier)) {
-                        HStack {
+                        responsiveValueRow(
+                            valueText: AppPresentation.formatBytes(runtime.sizeInBytes)
+                        ) {
                             VStack(alignment: .leading, spacing: 2) {
                                 HStack(spacing: 6) {
                                     Text(runtime.name)
@@ -349,10 +381,6 @@ struct CleanupSectionView: View {
                                         .foregroundStyle(.secondary)
                                 }
                             }
-                            Spacer()
-                            Text(AppPresentation.formatBytes(runtime.sizeInBytes))
-                                .font(.callout.monospacedDigit())
-                                .foregroundStyle(.secondary)
                         }
                     }
                     .disabled(!hasBundlePath)
@@ -381,7 +409,9 @@ struct CleanupSectionView: View {
                     let staleReasons = viewState.deviceStaleReasonsByUDID[device.udid] ?? []
                     let isStale = !staleReasons.isEmpty
                     Toggle(isOn: simulatorDeviceBinding(for: device.udid)) {
-                        HStack {
+                        responsiveValueRow(
+                            valueText: AppPresentation.formatBytes(device.sizeInBytes)
+                        ) {
                             VStack(alignment: .leading, spacing: 2) {
                                 HStack(spacing: 6) {
                                     Text(device.name)
@@ -422,10 +452,6 @@ struct CleanupSectionView: View {
                                         .foregroundStyle(.secondary)
                                 }
                             }
-                            Spacer()
-                            Text(AppPresentation.formatBytes(device.sizeInBytes))
-                                .font(.callout.monospacedDigit())
-                                .foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -440,7 +466,9 @@ struct CleanupSectionView: View {
             } else {
                 ForEach(snapshot.installs) { install in
                     Toggle(isOn: xcodeInstallBinding(for: install.path)) {
-                        HStack {
+                        responsiveValueRow(
+                            valueText: AppPresentation.formatBytes(install.sizeInBytes)
+                        ) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(install.displayName)
                                 Text("Version: \(install.version ?? "Unknown"), Build: \(install.build ?? "Unknown")")
@@ -452,10 +480,6 @@ struct CleanupSectionView: View {
                                     .lineLimit(2)
                                     .textSelection(.enabled)
                             }
-                            Spacer()
-                            Text(AppPresentation.formatBytes(install.sizeInBytes))
-                                .font(.callout.monospacedDigit())
-                                .foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -475,7 +499,9 @@ struct CleanupSectionView: View {
             } else {
                 ForEach(snapshot.physicalDeviceSupportDirectories) { directory in
                     Toggle(isOn: physicalDeviceSupportBinding(for: directory.path)) {
-                        HStack {
+                        responsiveValueRow(
+                            valueText: AppPresentation.formatBytes(directory.sizeInBytes)
+                        ) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(directory.name)
                                 Text(AppPresentation.physicalDeviceSupportDirectoryMetadata(directory, scannedAt: snapshot.scannedAt))
@@ -486,10 +512,6 @@ struct CleanupSectionView: View {
                                     .foregroundStyle(.secondary)
                                     .textSelection(.enabled)
                             }
-                            Spacer()
-                            Text(AppPresentation.formatBytes(directory.sizeInBytes))
-                                .font(.callout.monospacedDigit())
-                                .foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -510,7 +532,7 @@ struct CleanupSectionView: View {
             return lhs.rawValue < rhs.rawValue
         }
 
-        return VStack(alignment: .leading, spacing: 10) {
+        return LazyVStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Stale And Orphaned Simulator Artifacts")
@@ -557,7 +579,9 @@ struct CleanupSectionView: View {
                             ForEach(candidates) { candidate in
                                 let isReportOnly = AppPresentation.staleArtifactIsReportOnly(candidate.kind)
                                 Toggle(isOn: staleArtifactBinding(for: candidate.id)) {
-                                    HStack {
+                                    responsiveValueRow(
+                                        valueText: AppPresentation.formatBytes(candidate.reclaimableBytes)
+                                    ) {
                                         VStack(alignment: .leading, spacing: 3) {
                                             HStack(spacing: 6) {
                                                 Text(candidate.title)
@@ -584,10 +608,6 @@ struct CleanupSectionView: View {
                                                     .foregroundStyle(.orange)
                                             }
                                         }
-                                        Spacer()
-                                        Text(AppPresentation.formatBytes(candidate.reclaimableBytes))
-                                            .font(.callout.monospacedDigit())
-                                            .foregroundStyle(.secondary)
                                     }
                                 }
                                 .disabled(isReportOnly)
@@ -647,6 +667,32 @@ struct CleanupSectionView: View {
         }
         .padding(10)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    @ViewBuilder
+    private func responsiveValueRow<Content: View>(
+        valueText: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: LayoutMetrics.rowSpacing) {
+                content()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Text(valueText)
+                    .font(.callout.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                content()
+
+                Text(valueText)
+                    .font(.callout.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 
     private func categoryBinding(for kind: StorageCategoryKind) -> Binding<Bool> {
@@ -740,12 +786,6 @@ struct CleanupSectionView: View {
         )
     }
 
-    private struct PrimaryCleanupLayout {
-        let useSplitLayout: Bool
-        let selectionWidth: CGFloat
-        let workflowWidth: CGFloat
-    }
-
     private struct RunningToolState {
         let runningXcodeInstances: Int
         let runningSimulatorAppInstances: Int
@@ -753,26 +793,38 @@ struct CleanupSectionView: View {
         let executeBlockedByRunningTools: Bool
     }
 
-    private struct CleanupViewState {
+    private struct PrimaryCleanupLayout {
+        let useSplitLayout: Bool
+        let selectionWidth: CGFloat
+        let workflowWidth: CGFloat
+    }
+
+    private struct PlanningInputs: Equatable, Sendable {
+        let snapshot: XcodeInventorySnapshot
+        let selectionState: CleanupSelectionState
+        let staleArtifactReport: StaleArtifactReport?
+    }
+
+    private struct CleanupViewState: Sendable {
         let selection: DryRunSelection
         let plan: DryRunPlan
         let staleArtifactReport: StaleArtifactReport
         let staleArtifactPlan: DryRunPlan
+        let cleanupEligibleFootprintComponents: [CountedFootprintComponentUsage]
         let simulatorRuntimeByIdentifier: [String: SimulatorRuntimeRecord]
         let runtimeStaleReasonsByIdentifier: [String: [SimulatorRuntimeStaleReason]]
         let deviceStaleReasonsByUDID: [String: [SimulatorDeviceStaleReason]]
         let runningTools: RunningToolState
     }
 
-    private func makeViewState() -> CleanupViewState {
+    nonisolated private static func makeViewState(
+        snapshot: XcodeInventorySnapshot,
+        selectionState: CleanupSelectionState,
+        staleArtifactReport: StaleArtifactReport?
+    ) -> CleanupViewState {
         let selection = selectionState.selection(for: snapshot)
         let plan = DryRunPlanner.makePlan(snapshot: snapshot, selection: selection)
-        let staleArtifactReport = viewModel.staleArtifactReport ?? StaleArtifactReport(
-            generatedAt: snapshot.scannedAt,
-            candidates: [],
-            totalReclaimableBytes: 0,
-            notes: []
-        )
+        let staleArtifactReport = staleArtifactReport ?? emptyStaleArtifactReport(for: snapshot)
         let selectedStaleArtifactIDs = selectionState.selectedStaleArtifactIDs(from: staleArtifactReport)
         let staleArtifactPlan = StaleArtifactPlanner.makePlan(
             snapshot: snapshot,
@@ -789,14 +841,29 @@ struct CleanupSectionView: View {
             plan: plan,
             staleArtifactReport: staleArtifactReport,
             staleArtifactPlan: staleArtifactPlan,
+            cleanupEligibleFootprintComponents: AppPresentation.cleanupEligibleFootprintComponents(
+                in: snapshot.storage
+            ),
             simulatorRuntimeByIdentifier: simulatorRuntimeByIdentifier,
             runtimeStaleReasonsByIdentifier: AppPresentation.simulatorRuntimeStaleReasonsByIdentifier(in: snapshot),
             deviceStaleReasonsByUDID: AppPresentation.simulatorDeviceStaleReasonsByUDID(in: snapshot),
-            runningTools: makeRunningToolState()
+            runningTools: makeRunningToolState(snapshot: snapshot, selectionState: selectionState)
         )
     }
 
-    private func makeRunningToolState() -> RunningToolState {
+    nonisolated private static func emptyStaleArtifactReport(for snapshot: XcodeInventorySnapshot) -> StaleArtifactReport {
+        StaleArtifactReport(
+            generatedAt: snapshot.scannedAt,
+            candidates: [],
+            totalReclaimableBytes: 0,
+            notes: []
+        )
+    }
+
+    nonisolated private static func makeRunningToolState(
+        snapshot: XcodeInventorySnapshot,
+        selectionState: CleanupSelectionState
+    ) -> RunningToolState {
         let runningXcodeInstances = snapshot.runtimeTelemetry.totalXcodeRunningInstances
         let runningSimulatorAppInstances = snapshot.runtimeTelemetry.totalSimulatorAppRunningInstances
         let bootedSimulatorDeviceCount = snapshot.simulator.devices.filter { device in

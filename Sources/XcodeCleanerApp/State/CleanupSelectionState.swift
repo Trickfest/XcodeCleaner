@@ -1,6 +1,6 @@
 import XcodeInventoryCore
 
-struct CleanupSelectionState {
+struct CleanupSelectionState: Equatable, Sendable {
     var selectedCategoryKinds = Set(guiDefaultCleanupCategoryKinds)
     var selectedCountedFootprintComponentKinds: Set<CountedFootprintComponentKind> = []
     var selectedSimulatorDeviceUDIDs: Set<String> = []

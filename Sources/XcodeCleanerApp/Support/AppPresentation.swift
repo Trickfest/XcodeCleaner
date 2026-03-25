@@ -119,7 +119,7 @@ enum AppPresentation {
         }
     }
 
-    static func cleanupEligibleFootprintComponents(
+    nonisolated static func cleanupEligibleFootprintComponents(
         in storage: XcodeStorageUsage
     ) -> [CountedFootprintComponentUsage] {
         storage.countedOnlyComponents.filter { component in
@@ -140,7 +140,7 @@ enum AppPresentation {
         "Affects: \(CleanupPolicies.policy(for: kind).affectedRootsSummary)"
     }
 
-    static func simulatorRuntimeStaleReasonsByIdentifier(
+    nonisolated static func simulatorRuntimeStaleReasonsByIdentifier(
         in snapshot: XcodeInventorySnapshot
     ) -> [String: [SimulatorRuntimeStaleReason]] {
         var result: [String: [SimulatorRuntimeStaleReason]] = [:]
@@ -153,7 +153,7 @@ enum AppPresentation {
         return result
     }
 
-    static func simulatorDeviceStaleReasonsByUDID(
+    nonisolated static func simulatorDeviceStaleReasonsByUDID(
         in snapshot: XcodeInventorySnapshot
     ) -> [String: [SimulatorDeviceStaleReason]] {
         let runtimeByIdentifier = Dictionary(
