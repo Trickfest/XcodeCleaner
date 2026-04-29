@@ -625,7 +625,7 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
         let totalProgressUnits = listing.runtimes.count + listing.devices.count
         var processedProgressUnits = 0
 
-        let runtimes = listing.runtimes
+        let runtimeRecords = listing.runtimes
             .enumerated()
             .compactMap { index, runtime -> SimulatorRuntimeRecord? in
                 let bundlePath = runtime.bundlePath.flatMap { path in
@@ -661,6 +661,8 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
                     safetyClassification: .conditionallySafe
                 )
             }
+
+        let runtimes = deduplicatedSimulatorRuntimeRecords(runtimeRecords)
             .sorted { lhs, rhs in
                 if lhs.isAvailable != rhs.isAvailable {
                     return lhs.isAvailable
@@ -671,7 +673,10 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
                 return lhs.identifier.localizedCaseInsensitiveCompare(rhs.identifier) == .orderedAscending
             }
 
-        let runtimeNamesByIdentifier = Dictionary(uniqueKeysWithValues: runtimes.map { ($0.identifier, $0.name) })
+        let runtimeNamesByIdentifier = Dictionary(
+            runtimes.map { ($0.identifier, $0.name) },
+            uniquingKeysWith: { current, _ in current }
+        )
 
         let devices = listing.devices
             .enumerated()
@@ -715,6 +720,57 @@ public struct XcodeInventoryScanner: @unchecked Sendable {
             }
 
         return SimulatorInventory(devices: devices, runtimes: runtimes)
+    }
+
+    private func deduplicatedSimulatorRuntimeRecords(
+        _ runtimes: [SimulatorRuntimeRecord]
+    ) -> [SimulatorRuntimeRecord] {
+        var recordsByIdentifier: [String: SimulatorRuntimeRecord] = [:]
+
+        for runtime in runtimes {
+            guard let existing = recordsByIdentifier[runtime.identifier] else {
+                recordsByIdentifier[runtime.identifier] = runtime
+                continue
+            }
+
+            recordsByIdentifier[runtime.identifier] = preferredSimulatorRuntimeRecord(
+                existing,
+                runtime
+            )
+        }
+
+        return Array(recordsByIdentifier.values)
+    }
+
+    private func preferredSimulatorRuntimeRecord(
+        _ lhs: SimulatorRuntimeRecord,
+        _ rhs: SimulatorRuntimeRecord
+    ) -> SimulatorRuntimeRecord {
+        let lhsScore = simulatorRuntimePreferenceScore(lhs)
+        let rhsScore = simulatorRuntimePreferenceScore(rhs)
+
+        if lhsScore != rhsScore {
+            return lhsScore > rhsScore ? lhs : rhs
+        }
+
+        return lhs
+    }
+
+    private func simulatorRuntimePreferenceScore(_ runtime: SimulatorRuntimeRecord) -> Int {
+        var score = 0
+        if runtime.isAvailable {
+            score += 8
+        }
+        if runtime.deleteIdentifier != nil {
+            score += 4
+        }
+        if runtime.bundlePath != nil {
+            score += 2
+        }
+        if runtime.sizeInBytes > 0 {
+            score += 1
+        }
+        return score
     }
 
     private func shouldSkipRuntimeInventoryRecord(
@@ -1261,6 +1317,24 @@ public struct SystemRunningApplicationsProvider: RunningApplicationsProviding {
 public struct SimctlSimulatorListingProvider: SimulatorListingProviding {
     private let commandRunner: CommandRunning
 
+    private struct RuntimeBundleKey: Hashable {
+        let runtimeIdentifier: String
+        let bundlePath: String
+    }
+
+    private struct RuntimeDeleteIdentifierLookup {
+        var byRuntimeIdentifier: [String: String] = [:]
+        var byRuntimeIdentifierAndBundlePath: [RuntimeBundleKey: String] = [:]
+
+        var isEmpty: Bool {
+            byRuntimeIdentifier.isEmpty && byRuntimeIdentifierAndBundlePath.isEmpty
+        }
+
+        var hasPathScopedEntries: Bool {
+            !byRuntimeIdentifierAndBundlePath.isEmpty
+        }
+    }
+
     public init(commandRunner: CommandRunning = ProcessCommandRunner()) {
         self.commandRunner = commandRunner
     }
@@ -1278,12 +1352,12 @@ public struct SimctlSimulatorListingProvider: SimulatorListingProviding {
             launchPath: "/usr/bin/xcrun",
             arguments: ["simctl", "runtime", "list", "-j"]
         )
-        let deleteIdentifierByRuntimeIdentifier = parseRuntimeDeleteIdentifiers(json: runtimeDeleteIdentifiersJSON)
+        let deleteIdentifierLookup = parseRuntimeDeleteIdentifiers(json: runtimeDeleteIdentifiersJSON)
         return SimulatorListing(
             devices: parseDevices(json: devicesJSON),
             runtimes: parseRuntimes(
                 json: runtimesJSON,
-                deleteIdentifierByRuntimeIdentifier: deleteIdentifierByRuntimeIdentifier
+                deleteIdentifierLookup: deleteIdentifierLookup
             )
         )
     }
@@ -1324,7 +1398,7 @@ public struct SimctlSimulatorListingProvider: SimulatorListingProviding {
 
     private func parseRuntimes(
         json: String?,
-        deleteIdentifierByRuntimeIdentifier: [String: String]
+        deleteIdentifierLookup: RuntimeDeleteIdentifierLookup
     ) -> [SimulatorRuntimeListingRecord] {
         guard let json,
               let data = json.data(using: .utf8),
@@ -1340,17 +1414,22 @@ public struct SimctlSimulatorListingProvider: SimulatorListingProviding {
             let name = (entry["name"] as? String) ?? identifier
             let version = entry["version"] as? String
             let bundlePath = entry["bundlePath"] as? String
-            if shouldSkipRuntimeListing(
-                runtimeIdentifier: identifier,
+            let deleteIdentifier = deleteIdentifier(
+                forRuntimeIdentifier: identifier,
                 bundlePath: bundlePath,
-                deleteIdentifierByRuntimeIdentifier: deleteIdentifierByRuntimeIdentifier
+                in: deleteIdentifierLookup
+            )
+            if shouldSkipRuntimeListing(
+                bundlePath: bundlePath,
+                deleteIdentifier: deleteIdentifier,
+                deleteIdentifierLookup: deleteIdentifierLookup
             ) {
                 return nil
             }
             let isAvailable = parseAvailability(entry["isAvailable"])
             return SimulatorRuntimeListingRecord(
                 identifier: identifier,
-                deleteIdentifier: deleteIdentifierByRuntimeIdentifier[identifier],
+                deleteIdentifier: deleteIdentifier,
                 name: name,
                 version: version,
                 isAvailable: isAvailable,
@@ -1360,34 +1439,62 @@ public struct SimctlSimulatorListingProvider: SimulatorListingProviding {
     }
 
     private func shouldSkipRuntimeListing(
-        runtimeIdentifier: String,
         bundlePath: String?,
-        deleteIdentifierByRuntimeIdentifier: [String: String]
+        deleteIdentifier: String?,
+        deleteIdentifierLookup: RuntimeDeleteIdentifierLookup
     ) -> Bool {
-        guard !deleteIdentifierByRuntimeIdentifier.isEmpty,
+        guard !deleteIdentifierLookup.isEmpty,
               let bundlePath,
               isVolumeBackedRuntimeBundlePath(bundlePath),
-              deleteIdentifierByRuntimeIdentifier[runtimeIdentifier] == nil else {
+              deleteIdentifier == nil else {
             return false
         }
         return true
     }
 
-    private func parseRuntimeDeleteIdentifiers(json: String?) -> [String: String] {
+    private func deleteIdentifier(
+        forRuntimeIdentifier runtimeIdentifier: String,
+        bundlePath: String?,
+        in lookup: RuntimeDeleteIdentifierLookup
+    ) -> String? {
+        if let bundlePath {
+            let key = RuntimeBundleKey(
+                runtimeIdentifier: runtimeIdentifier,
+                bundlePath: normalize(path: bundlePath)
+            )
+            if let deleteIdentifier = lookup.byRuntimeIdentifierAndBundlePath[key] {
+                return deleteIdentifier
+            }
+            if lookup.hasPathScopedEntries && isVolumeBackedRuntimeBundlePath(bundlePath) {
+                return nil
+            }
+        }
+
+        return lookup.byRuntimeIdentifier[runtimeIdentifier]
+    }
+
+    private func parseRuntimeDeleteIdentifiers(json: String?) -> RuntimeDeleteIdentifierLookup {
         guard let json,
               let data = json.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return [:]
+            return RuntimeDeleteIdentifierLookup()
         }
 
-        var result: [String: String] = [:]
+        var result = RuntimeDeleteIdentifierLookup()
         for (key, rawEntry) in object {
             guard let entry = rawEntry as? [String: Any],
                   let runtimeIdentifier = entry["runtimeIdentifier"] as? String else {
                 continue
             }
             let deleteIdentifier = (entry["identifier"] as? String) ?? key
-            result[runtimeIdentifier] = deleteIdentifier
+            result.byRuntimeIdentifier[runtimeIdentifier] = deleteIdentifier
+            if let runtimeBundlePath = entry["runtimeBundlePath"] as? String {
+                let key = RuntimeBundleKey(
+                    runtimeIdentifier: runtimeIdentifier,
+                    bundlePath: normalize(path: runtimeBundlePath)
+                )
+                result.byRuntimeIdentifierAndBundlePath[key] = deleteIdentifier
+            }
         }
         return result
     }

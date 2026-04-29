@@ -49,6 +49,13 @@ struct XcodeInventoryScannerTests {
                       "bundlePath": "/Library/Developer/CoreSimulator/Volumes/iOS_23A8464/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 26.0.simruntime"
                     },
                     {
+                      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-26-0",
+                      "name": "iOS 26.0",
+                      "version": "26.0",
+                      "isAvailable": true,
+                      "bundlePath": "/Library/Developer/CoreSimulator/Volumes/iOS_STALE/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 26.0.simruntime"
+                    },
+                    {
                       "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-17-0",
                       "name": "iOS 17.0",
                       "version": "17.0",
@@ -90,6 +97,8 @@ struct XcodeInventoryScannerTests {
         #expect(listing.runtimes.count == 2)
         #expect(listing.runtimes.first?.identifier == "com.apple.CoreSimulator.SimRuntime.iOS-26-0")
         #expect(listing.runtimes.first?.deleteIdentifier == "F494D526-FCD7-445B-90AB-C47002D37BDE")
+        #expect(listing.runtimes.filter { $0.identifier == "com.apple.CoreSimulator.SimRuntime.iOS-26-0" }.count == 1)
+        #expect(listing.runtimes.contains(where: { $0.bundlePath?.contains("iOS_STALE") == true }) == false)
         #expect(listing.runtimes.contains(where: {
             $0.identifier == "com.apple.CoreSimulator.SimRuntime.iOS-17-0" && $0.deleteIdentifier == nil
         }))
@@ -145,6 +154,71 @@ struct XcodeInventoryScannerTests {
         let simulatorData = try #require(snapshot.storage.categories.first(where: { $0.kind == .simulatorData }))
         #expect(simulatorData.paths.contains(existingRuntimePath))
         #expect(simulatorData.paths.contains(deletedRuntimePath) == false)
+    }
+
+    @Test("Scanner keeps runtime identifiers unique when simctl reports duplicate runtimes")
+    func scannerDeduplicatesDuplicateRuntimeIdentifiers() throws {
+        let sandbox = try TemporaryDirectory.make()
+        defer { sandbox.cleanup() }
+
+        let fakeHome = sandbox.url.appendingPathComponent("fake-home", isDirectory: true)
+        let currentRuntimePath = "/Library/Developer/CoreSimulator/Volumes/iOS_23E254a/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 26.4.simruntime"
+        let duplicateRuntimePath = "/Library/Developer/CoreSimulator/Volumes/iOS_23E244/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 26.4.simruntime"
+        let runtimeIdentifier = "com.apple.CoreSimulator.SimRuntime.iOS-26-4"
+        let simulatorDeviceUDID = "SIM-DEVICE-26-4"
+        let simulatorDevicePath = fakeHome
+            .appendingPathComponent("Library/Developer/CoreSimulator/Devices/\(simulatorDeviceUDID)", isDirectory: true)
+            .path
+
+        let scanner = XcodeInventoryScanner(
+            applicationDiscoverer: StubDiscoverer(urls: []),
+            activeDeveloperDirectoryProvider: StubActiveDeveloperProvider(url: nil),
+            pathSizer: StubPathSizer(sizeByPath: [
+                currentRuntimePath: 700,
+                duplicateRuntimePath: 600,
+                simulatorDevicePath: 100,
+            ]),
+            homeDirectoryProvider: StubHomeDirectoryProvider(url: fakeHome),
+            runningApplicationsProvider: StubRunningApplicationsProvider(records: []),
+            simulatorListingProvider: StubSimulatorListingProvider(
+                listing: SimulatorListing(
+                    devices: [
+                        SimulatorDeviceListingRecord(
+                            udid: simulatorDeviceUDID,
+                            name: "iPhone 17",
+                            runtimeIdentifier: runtimeIdentifier,
+                            state: "Shutdown",
+                            isAvailable: true
+                        ),
+                    ],
+                    runtimes: [
+                        SimulatorRuntimeListingRecord(
+                            identifier: runtimeIdentifier,
+                            deleteIdentifier: "runtime-delete-current",
+                            name: "iOS 26.4",
+                            version: "26.4",
+                            isAvailable: true,
+                            bundlePath: currentRuntimePath
+                        ),
+                        SimulatorRuntimeListingRecord(
+                            identifier: runtimeIdentifier,
+                            deleteIdentifier: "runtime-delete-duplicate",
+                            name: "iOS 26.4",
+                            version: "26.4",
+                            isAvailable: true,
+                            bundlePath: duplicateRuntimePath
+                        ),
+                    ]
+                )
+            )
+        )
+
+        let snapshot = scanner.scan()
+
+        #expect(snapshot.simulator.runtimes.map(\.identifier) == [runtimeIdentifier])
+        #expect(snapshot.simulator.runtimes.first?.deleteIdentifier == "runtime-delete-current")
+        #expect(snapshot.simulator.runtimes.first?.bundlePath == currentRuntimePath)
+        #expect(snapshot.simulator.devices.first?.runtimeName == "iOS 26.4")
     }
 
     @Test("Scanner discovers installs, deduplicates paths, and marks active install")
